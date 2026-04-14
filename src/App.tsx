@@ -4,12 +4,18 @@ import Layout from './components/Layout'
 import "./index.css";
 import { LayerProvider } from './context/LayerContext';
 import { ThemeProvider } from './components/theme-provider';
+import { IniFileProvider } from './context/IniFileContext';
+import { SkinMetadataProvider } from './context/SkinMetadataContext';
 
 function App() {
   return (
     <ThemeProvider>
       <LayerProvider>
-        <Layout />
+        <IniFileProvider>
+          <SkinMetadataProvider>
+            <Layout />
+          </SkinMetadataProvider>
+        </IniFileProvider>
       </LayerProvider>
     </ThemeProvider>
   )

@@ -1,19 +1,12 @@
 import { useEffect, useState } from "react"
 
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarSeparator,
-} from "@/components/ui/sidebar"
 import { checkForAppUpdates } from "@/services/CheckForAppUpdates";
 import { useToast } from "@/hooks/use-toast";
 import { handleCreateDirectory } from "@/services/ExportToINI";
 import { version as appVersion } from '../../package.json';
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { Button } from "./ui/button";
-import { Bug } from 'lucide-react';
+import { Bug, Undo, Redo } from 'lucide-react';
 import { FaDiscord, FaReddit } from "react-icons/fa";
 import { useLayerContext } from "@/context/LayerContext";
 import ExportModal from "./ExportModal";
@@ -22,30 +15,36 @@ import TextLayerProperties from "./PropertiesSidebar/TextProperties";
 import ImageLayerProperties from "./PropertiesSidebar/ImageProperties";
 import RotatorLayerProperties from "./PropertiesSidebar/RotatorProperties";
 import BarLayerProperties from "./PropertiesSidebar/BarProperties";
+import RoundlineLayerProperties from "./PropertiesSidebar/RoundlineProperties";
+import ShapeLayerProperties from "./PropertiesSidebar/ShapeProperties";
 import { ModeToggle } from "./mode-toggle";
+import { useUndoRedo } from "@/hooks/useUndoRedo";
+import { ScrollArea } from "./ui/scroll-area";
+import { useSkinMetadata } from "@/context/SkinMetadataContext";
 
 
 export function SidebarRight({
+  className,
   ...props
-}: React.ComponentProps<typeof Sidebar>) {
+}: React.ComponentProps<"div">) {
     const { selectedLayer } = useLayerContext();
     const selectedLayerId = selectedLayer?.id;
-    const [version, setVersion] = useState('1.0.0'); // Add version state
+    const [version, setVersion] = useState('1.0.0');
   const v = appVersion;
+  const { canUndo, canRedo, undo, redo } = useUndoRedo();
+  const { metadata } = useSkinMetadata();
 
   useEffect(() => {
     checkForAppUpdates(false);
     console.log(version);
-    // Fetch version number if needed
-    // setVersion(fetchVersionNumber());
     setVersion(v);
   }, []);
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const { toast } = useToast();
 
-  const handleExport = async (metadata: { name: string; author: string; version: string; description: string},  allowScrollResize: boolean ) => {
-    const success = await handleCreateDirectory(metadata, allowScrollResize);
+  const handleExport = async () => {
+    const success = await handleCreateDirectory(metadata, metadata.allowScrollResize);
 
     if (success) {
         toast({
@@ -62,18 +61,58 @@ export function SidebarRight({
 
     return success;
   };
+  
   return (
-    <Sidebar
-      collapsible="none"
-      className="sticky hidden lg:flex top-0 h-svh border-l"
+    <div
+      className={`flex flex-col h-full w-full bg-transparent ${className || ''}`}
       {...props}
     >
-      <SidebarHeader className="h-fit flex flex-row justify-between border-b border-sidebar-border">
-        {/* <NavUser user={data.user} /> */}
+      {/* Header */}
+      <div className="flex flex-row justify-between border-b border-white/5 p-2 shrink-0 bg-white/[0.02] backdrop-blur-sm">
         <ModeToggle />
-        <Tooltip>
+        <div className="flex gap-1 items-center">
+          <Tooltip>
             <TooltipTrigger asChild>
-              <Button className="w-fit" variant="default" onClick={() => setIsExportModalOpen(true)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={undo}
+                disabled={!canUndo}
+                className="h-8 w-8 hover:bg-white/5 disabled:opacity-30"
+              >
+                <Undo className={`h-4 w-4 ${canUndo ? 'text-primary' : ''}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Undo (Ctrl+Z)</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={redo}
+                disabled={!canRedo}
+                className="h-8 w-8 hover:bg-white/5 disabled:opacity-30"
+              >
+                <Redo className={`h-4 w-4 ${canRedo ? 'text-primary' : ''}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Redo (Ctrl+Y)</p>
+            </TooltipContent>
+          </Tooltip>
+          
+          <div className="w-[1px] h-4 bg-white/5 self-center mx-1" />
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                className="h-8 px-3 text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] transition-all duration-300" 
+                variant="outline" 
+                onClick={() => setIsExportModalOpen(true)}
+              >
                 Export
               </Button>
             </TooltipTrigger>
@@ -81,9 +120,11 @@ export function SidebarRight({
               <p>Export Skin</p>
             </TooltipContent>
           </Tooltip>
-      </SidebarHeader>
-      <SidebarContent>
-        {/* <DatePicker /> */}
+        </div>
+      </div>
+
+      {/* Content */}
+      <ScrollArea className="flex-1">
         {!selectedLayerId && (
           <SkinProperties />
         )}
@@ -99,15 +140,21 @@ export function SidebarRight({
         {selectedLayerId && (selectedLayer.type === 'bar') && (
           <BarLayerProperties />
         )}
-      </SidebarContent>
-      <SidebarSeparator />
-      <SidebarFooter className="h-fit flex flex-row justify-end border-b border-sidebar-border">
+        {selectedLayerId && (selectedLayer.type === 'roundline') && (
+          <RoundlineLayerProperties />
+        )}
+        {selectedLayerId && (selectedLayer.type === 'shape') && (
+          <ShapeLayerProperties />
+        )}
+      </ScrollArea>
+
+      {/* Footer */}
+      <div className="flex flex-row justify-end border-t border-sidebar-border p-2 shrink-0">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button 
+            <Button
               variant="outline"
-              onClick={() => open("https://www.reddit.com/r/rainmetereditor/")} 
-              
+              onClick={() => open("https://www.reddit.com/r/rainmetereditor/")}
               className="hover:text-primary"
             >
               <FaReddit />
@@ -119,9 +166,9 @@ export function SidebarRight({
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button 
+            <Button
               variant="outline"
-              onClick={() => open("https://discord.gg/tzY82KkS4H")} 
+              onClick={() => open("https://discord.gg/tzY82KkS4H")}
               className="hover:text-primary"
             >
               <FaDiscord />
@@ -134,10 +181,9 @@ export function SidebarRight({
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button 
+            <Button
               variant="outline"
-              onClick={() => open("https://github.com/kethakav/rainmeter-editor/issues")} 
-              
+              onClick={() => open("https://github.com/kethakav/rainmeter-editor/issues")}
               className="hover:text-destructive"
             >
               <Bug />
@@ -147,12 +193,13 @@ export function SidebarRight({
             <p>Report a Bug</p>
           </TooltipContent>
         </Tooltip>
-      </SidebarFooter>
+      </div>
+
       <ExportModal
-        onExport={handleExport} 
-        open={isExportModalOpen} 
+        onExport={handleExport}
+        open={isExportModalOpen}
         onOpenChange={setIsExportModalOpen}
       />
-    </Sidebar>
+    </div>
   )
 }

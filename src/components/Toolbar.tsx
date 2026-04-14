@@ -7,10 +7,30 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { layerManager } from '@/services/LayerManager';
-import { CircleGauge, Image, Minus, MousePointer, Type } from 'lucide-react';
+import { canvasManager } from '@/services/CanvasManager';
+import { 
+  CircleGauge, Image, Minus, MousePointer, Type, PenTool, Circle, 
+  Grid3X3, Magnet, ZoomIn, ZoomOut,
+  AlignLeft, AlignCenter, AlignRight,
+  AlignStartVertical, AlignCenterVertical, AlignEndVertical
+} from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
 
 const Toolbar: React.FC = () => {
   const [selectedTool, setSelectedTool] = useState<string>('select');
+  const [showGrid, setShowGrid] = useState(false);
+  const [snapToGrid, setSnapToGrid] = useState(false);
+  const [gridSize, setGridSize] = useState(10);
+  const [zoom, setZoom] = useState(100);
+  const [canAlign, setCanAlign] = useState(false);
 
   useEffect(() => {
     // Update the selected tool when it changes
@@ -24,6 +44,52 @@ const Toolbar: React.FC = () => {
     // Clean up the subscription when the component unmounts
     return () => {
       layerManager.unsubscribeFromToolChanges(handleToolChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Sync with canvas manager grid config
+    const config = canvasManager.getGridConfig();
+    setShowGrid(config.showGrid);
+    setSnapToGrid(config.snapToGrid);
+    setGridSize(config.gridSize);
+    setZoom(Math.round(canvasManager.getZoom() * 100));
+  }, []);
+
+  // Update zoom state when canvas zoom changes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentZoom = Math.round(canvasManager.getZoom() * 100);
+      if (currentZoom !== zoom) {
+        setZoom(currentZoom);
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [zoom]);
+
+  // Handle selection changes for alignment tools
+  useEffect(() => {
+    const canvas = canvasManager.getCanvas();
+    if (!canvas) return;
+
+    const updateSelectionState = () => {
+      const activeObject = canvas.getActiveObject();
+      const isMulti = !!activeObject && (
+        activeObject.type === 'activeSelection' || 
+        activeObject.type === 'activeselection' ||
+        activeObject.type === 'group'
+      );
+      setCanAlign(isMulti);
+    };
+
+    canvas.on('selection:created', updateSelectionState);
+    canvas.on('selection:updated', updateSelectionState);
+    canvas.on('selection:cleared', updateSelectionState);
+
+    return () => {
+      canvas.off('selection:created', updateSelectionState);
+      canvas.off('selection:updated', updateSelectionState);
+      canvas.off('selection:cleared', updateSelectionState);
     };
   }, []);
 
@@ -47,25 +113,66 @@ const Toolbar: React.FC = () => {
     layerManager.setActiveTool('bar');
   };
 
-  const isSelected = (tool: string) => selectedTool === tool;  
+  const handleAddShape = () => {
+    layerManager.setActiveTool('shape');
+  };
+
+  const handleAddRoundline = () => {
+    layerManager.setActiveTool('roundline');
+  };
+
+  const toggleGrid = () => {
+    const newState = !showGrid;
+    setShowGrid(newState);
+    canvasManager.setGridConfig({ showGrid: newState });
+  };
+
+  const toggleSnapToGrid = () => {
+    const newState = !snapToGrid;
+    setSnapToGrid(newState);
+    canvasManager.setGridConfig({ snapToGrid: newState });
+  };
+
+  const handleGridSizeChange = (value: string) => {
+    const newSize = parseInt(value);
+    if (newSize > 0 && newSize <= 100) {
+      setGridSize(newSize);
+      canvasManager.setGridConfig({ gridSize: newSize });
+    }
+  };
+
+  const zoomIn = () => {
+    const newZoom = Math.min(500, zoom + 25);
+    canvasManager.setZoom(newZoom / 100);
+    setZoom(newZoom);
+  };
+
+  const zoomOut = () => {
+    const newZoom = Math.max(10, zoom - 25);
+    canvasManager.setZoom(newZoom / 100);
+    setZoom(newZoom);
+  };
+
+  const resetZoom = () => {
+    canvasManager.resetZoom();
+    setZoom(100);
+  };
+
+  const isSelected = (tool: string) => selectedTool === tool;
 
   return (
     <TooltipProvider>
       <div className="flex items-center justify-center fixed bottom-0 left-1/2 transform -translate-x-1/2 mb-4">
         <div className="h-14 w-fit bg-sidebar-accent border rounded-xl shadow-none flex items-center justify-between px-3">
-          
+
           <div className="flex items-center justify-center space-x-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button 
+                <Button
                   variant={isSelected('select') ? 'default' : 'ghost'}
                   size="icon"
                   onClick={handleSelectTool}
                 >
-                  {/* <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                    <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
-                    <path d="M13 13l6 6"/>
-                  </svg> */}
                   <MousePointer />
                   <span className="sr-only">Select</span>
                 </Button>
@@ -77,16 +184,11 @@ const Toolbar: React.FC = () => {
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button 
+                <Button
                   onClick={handleAddText}
                   variant={isSelected('text') ? 'default' : 'ghost'}
                   size="icon"
                 >
-                  {/* <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                    <path d="M4 7V4h16v3"/>
-                    <path d="M9 20h6"/>
-                    <path d="M12 4v16"/>
-                  </svg> */}
                   <Type />
                   <span className="sr-only">Text</span>
                 </Button>
@@ -98,16 +200,11 @@ const Toolbar: React.FC = () => {
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button 
+                <Button
                   onClick={handleAddImage}
                   variant={isSelected('image') ? 'default' : 'ghost'}
                   size="icon"
                 >
-                  {/* <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                    <circle cx="8.5" cy="8.5" r="1.5"/>
-                    <polyline points="21 15 16 10 5 21"/>
-                  </svg> */}
                   <Image />
                   <span className="sr-only">Image</span>
                 </Button>
@@ -119,7 +216,39 @@ const Toolbar: React.FC = () => {
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button 
+                <Button
+                  onClick={handleAddShape}
+                  variant={isSelected('shape') ? 'default' : 'ghost'}
+                  size="icon"
+                >
+                  <PenTool />
+                  <span className="sr-only">Shape</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Shape Tool</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleAddRoundline}
+                  variant={isSelected('roundline') ? 'default' : 'ghost'}
+                  size="icon"
+                >
+                  <Circle />
+                  <span className="sr-only">Roundline</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Roundline Tool</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
                   onClick={handleAddRotator}
                   variant={isSelected('rotator') ? 'default' : 'ghost'}
                   size="icon"
@@ -134,14 +263,11 @@ const Toolbar: React.FC = () => {
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button 
+                <Button
                   onClick={handleAddBar}
                   variant={isSelected('bar') ? 'default' : 'ghost'}
                   size="icon"
                 >
-                  {/* <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                    <rect x="3" y="11" width="18" height="2" rx="1" ry="1"/>
-                  </svg> */}
                   <Minus />
                   <span className="sr-only">Bar</span>
                 </Button>
@@ -150,6 +276,194 @@ const Toolbar: React.FC = () => {
                 <p>Bar Tool</p>
               </TooltipContent>
             </Tooltip>
+
+            <div className="h-8 w-[1px] bg-sidebar-border mx-1" />
+
+            {/* Alignment Tools */}
+            <div className="flex items-center gap-0.5 px-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!canAlign}
+                    onClick={() => canvasManager.alignSelected('left')}
+                    className="h-9 w-9"
+                  >
+                    <AlignLeft className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Align Left</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!canAlign}
+                    onClick={() => canvasManager.alignSelected('center')}
+                    className="h-9 w-9"
+                  >
+                    <AlignCenter className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Align Center (Horizontal)</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!canAlign}
+                    onClick={() => canvasManager.alignSelected('right')}
+                    className="h-9 w-9"
+                  >
+                    <AlignRight className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Align Right</TooltipContent>
+              </Tooltip>
+
+              <div className="w-[1px] h-4 bg-sidebar-border mx-1 opacity-50" />
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!canAlign}
+                    onClick={() => canvasManager.alignSelected('top')}
+                    className="h-9 w-9"
+                  >
+                    <AlignStartVertical className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Align Top</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!canAlign}
+                    onClick={() => canvasManager.alignSelected('middle')}
+                    className="h-9 w-9"
+                  >
+                    <AlignCenterVertical className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Align Middle (Vertical)</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!canAlign}
+                    onClick={() => canvasManager.alignSelected('bottom')}
+                    className="h-9 w-9"
+                  >
+                    <AlignEndVertical className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Align Bottom</TooltipContent>
+              </Tooltip>
+            </div>
+
+            <div className="h-8 w-[1px] bg-sidebar-border mx-1" />
+
+            {/* Zoom Controls */}
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={zoomOut}
+                    disabled={zoom <= 10}
+                  >
+                    <ZoomOut className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Zoom Out</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={resetZoom}
+                    className="min-w-[60px] text-xs font-mono"
+                  >
+                    {zoom}%
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Reset Zoom (100%)</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={zoomIn}
+                    disabled={zoom >= 500}
+                  >
+                    <ZoomIn className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Zoom In</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            <div className="h-8 w-[1px] bg-sidebar-border mx-1" />
+
+            {/* Grid Controls */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant={showGrid ? 'default' : 'ghost'}
+                  size="icon"
+                >
+                  <Grid3X3 />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="w-56">
+                <DropdownMenuItem onClick={toggleGrid} className="gap-2">
+                  <Grid3X3 className="h-4 w-4" />
+                  <span>Show Grid</span>
+                  <span className="ml-auto">{showGrid ? '✓' : ''}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={toggleSnapToGrid} className="gap-2">
+                  <Magnet className="h-4 w-4" />
+                  <span>Snap to Grid</span>
+                  <span className="ml-auto">{snapToGrid ? '✓' : ''}</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <div className="px-2 py-2">
+                  <Label className="text-xs mb-2 block">Grid Size</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={gridSize}
+                    onChange={(e) => handleGridSizeChange(e.target.value)}
+                    className="h-8"
+                  />
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

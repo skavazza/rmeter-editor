@@ -2,12 +2,14 @@ import { useLayerContext } from "@/context/LayerContext";
 import { layerManager } from "@/services/LayerManager";
 import { Circle, FabricImage, Group } from "fabric";
 import { useEffect, useState } from "react";
-import { SidebarGroup, SidebarGroupLabel, SidebarSeparator } from "../ui/sidebar";
 import PropertyInput from "../customUI/PropertyInput";
-import { CircleArrowOutUpRight, RotateCw, UnfoldHorizontal, UnfoldVertical } from "lucide-react";
+import { CircleArrowOutUpRight, RotateCw, UnfoldHorizontal, UnfoldVertical, Compass } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Button } from "../ui/button";
 import { open } from "@tauri-apps/plugin-dialog";
+import { Label } from "../ui/label";
+import CommonProperties from "./CommonProperties";
+import CollapsibleSidebarGroup from "./CollapsibleSidebarGroup";
 
 const RotatorLayerProperties: React.FC = () => {
 
@@ -19,10 +21,6 @@ const RotatorLayerProperties: React.FC = () => {
     const [category, setCategory] = useState<string>('');
 
     const [rotatorLayerProperties, setRotatorLayerProperties] = useState({
-        x: '',
-        y: '',
-        height: '',
-        width: '',
         offsetX: '',
         offsetY: '',
         rotation: '',
@@ -52,13 +50,8 @@ const RotatorLayerProperties: React.FC = () => {
                 const rotatorLayer = layer.fabricObject as FabricImage;
                 const measure = layer.measure || 'rotator-time-second';
                 const { type, category: newCategory } = getMeasureTypeAndCategory(measure);
-                console.log(category); // Do not delete, this is here because Tauri won't build the app with unused variables (category)
 
                 setRotatorLayerProperties({
-                    x: rotatorLayer.left?.toString() || '0',
-                    y: rotatorLayer.top?.toString() || '0',
-                    height: (rotatorLayer.scaleY * rotatorLayer.height)?.toString() || '100',
-                    width: (rotatorLayer.scaleX * rotatorLayer.width)?.toString() || '100',
                     offsetX: layer.properties.find(prop => prop.property === 'offsetX')?.value.toString() || '0',
                     offsetY: layer.properties.find(prop => prop.property === 'offsetY')?.value.toString() || '0',
                     startAngle: layer.properties.find(prop => prop.property === 'startAngle')?.value.toString() || '0',
@@ -99,61 +92,41 @@ const RotatorLayerProperties: React.FC = () => {
             const layer = layerManager.getLayers().find(layer => layer.id === selectedLayerId);
             if (layer && layer.type === 'rotator') {
                 const rotatorLayer = layer.fabricObject as FabricImage;
-                const rotatorUI = layer.UIElements;
-                if (field === 'x') {
-                    rotatorLayer.set({ left: Number(value) });
-                    rotatorUI.set({ left: Number(value)} );
-                } else if (field === 'y') {
-                    rotatorLayer.set({ top: Number(value) });
-                    rotatorUI.set({ top: Number(value)} );
-                }
-
-
-                const numValue = Math.max(1, Number(value)); // Ensure minimum value is 1
-                if (field === 'width') {
-                    rotatorLayer.scaleX = numValue / (rotatorLayer.width || 1);
-                    setRotatorLayerProperties(prev => ({
-                    ...prev,
-                    width: numValue.toString()
-                    }));
-                } if (field === 'height') {
-                    rotatorLayer.scaleY = numValue / (rotatorLayer.height || 1);
-                    setRotatorLayerProperties(prev => ({
-                    ...prev,
-                    height: numValue.toString()
-                    }));
-                }
-
+                
                 if (field === 'offsetX' || field === 'offsetY') {
                     const numValue = Number(value);
-                    const prop = layer.properties.find(prop => prop.property === field);
+                    const propKey = field === 'offsetX' ? 'OffsetX' : 'OffsetY';
+                    const prop = layer.properties.find(prop => prop.property.toLowerCase() === field.toLowerCase());
                     if (prop) {
                         prop.value = numValue.toString();
                     } else {
-                        layer.properties.push({ property: field, value: numValue.toString() });
+                        layer.properties.push({ property: propKey, value: numValue.toString() });
                     }
                     // update fabricobject.UIElements
                     if (field === 'offsetX') {
-                        layer.UIElements.set('left', layer.fabricObject.left + numValue);
+                        layer.UIElements.set('left', rotatorLayer.left + numValue);
                     } else if (field === 'offsetY') {
-                        layer.UIElements.set('top', layer.fabricObject.top + numValue);
+                        layer.UIElements.set('top', rotatorLayer.top + numValue);
                     }
                 }
 
                 if (field === 'startAngle' || field === 'rotationAngle') {
                     const numValue = Number(value);
-                    const prop = layer.properties.find(prop => prop.property === field);
+                    const propKey = field === 'startAngle' ? 'StartAngle' : 'RotationAngle';
+                    const prop = layer.properties.find(prop => prop.property.toLowerCase() === field.toLowerCase());
                     if (prop) {
                         prop.value = numValue.toString();
                     } else {
-                        layer.properties.push({ property: field, value: numValue.toString() });
+                        layer.properties.push({ property: propKey, value: numValue.toString() });
                     }
 
                     const UIGroup = layer.UIElements as Group;
-                    const rangeIndicator = UIGroup._objects[1] as Circle
+                    const uiObjects = UIGroup.getObjects ? UIGroup.getObjects() : (UIGroup as any)._objects;
+                    
+                    if (!uiObjects || uiObjects.length < 2) return;
+                    const rangeIndicator = uiObjects[1] as Circle
 
                     if (field === 'startAngle') {
-                        // rangeIndicator.set('startAngle', numValue);
                         rangeIndicator.set('angle', numValue - 90);
                         rotatorLayer.set('angle', numValue);
                     } else if (field === 'rotationAngle') {
@@ -161,11 +134,9 @@ const RotatorLayerProperties: React.FC = () => {
                     }
                 }
                 if (field === 'source') {
-                    console.log(value);
                     layerManager.updateImageForSelectedLayer(value);
                 }
                 if (field === 'measure') {
-                    // layer.measure = value;
                     layerManager.updateMeasureForSelectedLayer(value);
                 }
 
@@ -179,212 +150,139 @@ const RotatorLayerProperties: React.FC = () => {
 
     const handleImageSourceUpdate = async () => {
         const selectedFile = await open({
-            title: 'Select an Image',
+            title: 'Select Rotator Image',
             filters: [
                 {
                     name: 'Images',
-                    extensions: ['png'],
+                    extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif'],
                 },
             ],
         });
-        if (!selectedFile) return;
+        if (!selectedFile || typeof selectedFile !== 'string') return;
         layerManager.updateImageForSelectedLayer(selectedFile);
-
     }
 
     const handleMeasureTypeChange = (value: string) => {
         setMeasureType(value);
         if (value === 'time') {
-            setCategory('time'); // Add the correct one
             handleInputChange('measure', 'rotator-time-second');
         } else if (value === 'cpu') {
-            setCategory('cpu'); // Add the correct one
             handleInputChange('measure', 'rotator-cpu-average');
         } else if (value === 'disk') {
-            setCategory('disk'); // Add the correct one
             handleInputChange('measure', 'rotator-disk-c-usage');
         }
     }
 
     return(
-        <div>
-            <SidebarGroup>
-                <SidebarGroupLabel>Rotator Properties</SidebarGroupLabel>
-            </SidebarGroup>
-            <SidebarSeparator />
-            <SidebarGroup>
-                <SidebarGroupLabel>Image</SidebarGroupLabel>
-                <div className="flex space-x-4 px-2 py-2">
-                    {/* Source */}
-                    <Button 
-                        variant="outline" 
-                        onClick={handleImageSourceUpdate}
-                        className="shadow-none"
+        <div className="flex flex-col gap-0">
+            <CommonProperties />
+            
+            <CollapsibleSidebarGroup 
+                label="Rotator Properties" 
+                icon={<Compass className="h-4 w-4" />}
+            >
+                <div className="space-y-4 px-3 py-2">
+                    <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Rotator Image</Label>
+                        <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={handleImageSourceUpdate}
+                            className="w-full h-8 shadow-none text-xs bg-background/50"
                         >
-                        Change Rotator Image
-                    </Button>
-                </div>
-            </SidebarGroup>
-            <SidebarSeparator />
-            <SidebarGroup>
-                <SidebarGroupLabel>Transform</SidebarGroupLabel>
-                <div className="flex space-x-4 px-2 py-2">
-                    {/* X Position */}
-                    <PropertyInput 
-                        id='rotator-x' 
-                        label='X' 
-                        value={rotatorLayerProperties.x} 
-                        onChange={value => handleInputChange('x', value)}   
-                    />
-
-                    {/* Y Position */}
-                    <PropertyInput 
-                        id='rotator-y' 
-                        label='Y' 
-                        value={rotatorLayerProperties.y} 
-                        onChange={value => handleInputChange('y', value)}
-                    />
-                </div>
-            </SidebarGroup>
-            <SidebarSeparator />
-            <SidebarGroup>
-                <SidebarGroupLabel>Pivot Point</SidebarGroupLabel>
-                <div className="flex space-x-4 px-2 py-2">
-                    {/* Offset X */}
-                    <PropertyInput 
-                        id='rotator-offset-x' 
-                        label='Offset X' 
-                        icon={UnfoldHorizontal}
-                        value={rotatorLayerProperties.offsetX} 
-                        onChange={value => handleInputChange('offsetX', value)}   
-                    />
-
-                    {/* Offset Y */}
-                    <PropertyInput 
-                        id='rotator-offset-y' 
-                        label='Offset Y' 
-                        icon={UnfoldVertical}
-                        value={rotatorLayerProperties.offsetY} 
-                        onChange={value => handleInputChange('offsetY', value)}
-                    />
-                </div>
-            </SidebarGroup>
-            <SidebarSeparator />
-            <SidebarGroup>
-                <SidebarGroupLabel>Rotation Angles</SidebarGroupLabel>
-                <div className="flex space-x-4 px-2 py-2">
-                    {/* Start Angle */}
-                    <PropertyInput 
-                        id='rotator-start-angle' 
-                        label='Start Angle' 
-                        icon={CircleArrowOutUpRight}
-                        value={rotatorLayerProperties.startAngle} 
-                        onChange={value => handleInputChange('startAngle', value)}
-                    />
-
-                    {/* Rotation Angle */}
-                    <PropertyInput 
-                        id='rotator-rotation-angle' 
-                        label='Rotation Angle'
-                        icon={RotateCw} 
-                        value={rotatorLayerProperties.rotationAngle} 
-                        onChange={value => handleInputChange('rotationAngle', value)}
-                    />
-                </div>
-            </SidebarGroup>
-            <SidebarSeparator />
-            <SidebarGroup className='pb-0'>
-                <SidebarGroupLabel>Measure Type</SidebarGroupLabel>
-                <div className="flex space-x-4 px-2 py-2">
-                    {/* Select Measure Type */}
-                    <Select
-                        value={measureType}
-                        onValueChange={handleMeasureTypeChange}
-                        defaultValue='custom-text'
-                    >
-                        <SelectTrigger id="measure-select" className='w-52 shadow-none'>
-                            <SelectValue placeholder="Select Measure Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value='time'>Time</SelectItem>
-                            <SelectItem value="cpu">CPU</SelectItem>
-                            <SelectItem value="disk">Disk</SelectItem>
-                            <SelectItem value="ram">RAM (Coming Soon)</SelectItem>
-                            <SelectItem value="network">Network (Coming Soon)</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-            </SidebarGroup>
-            {measureType === 'time' && (
-                <SidebarGroup className="pb-0">
-                    <SidebarGroupLabel>Time Measure</SidebarGroupLabel>
-                    <div className="flex space-x-4 px-2 py-2">
-                        {/* Select Measure Category */}
-                        <Select
-                            value={rotatorLayerProperties.measure}
-                            onValueChange={handleInputChange.bind(null, 'measure') as any}
-                            defaultValue='time'
-                        >
-                            <SelectTrigger id="category-select" className='w-52 shadow-none'>
-                                <SelectValue placeholder="Select Time Measure" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="rotator-time-second">Seconds</SelectItem>
-                                <SelectItem value="rotator-time-minute">Minutes</SelectItem>
-                                <SelectItem value="rotator-time-hour">Hours</SelectItem>
-                            </SelectContent>
-                        </Select>
+                            Change Image
+                        </Button>
                     </div>
-                </SidebarGroup>
-            )}
-            {measureType === 'cpu' && (
-                <SidebarGroup className="pb-0">
-                    <SidebarGroupLabel>CPU Measure</SidebarGroupLabel>
-                    <div className="flex space-x-4 px-2 py-2">
-                        {/* Select Measure Category */}
-                        <Select
-                            value={rotatorLayerProperties.measure}
-                            onValueChange={handleInputChange.bind(null, 'measure') as any}
-                            defaultValue='time'
-                        >
-                            <SelectTrigger id="category-select" className='w-52 shadow-none'>
-                                <SelectValue placeholder="Select CPU Measure" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="rotator-cpu-average">Average CPU Usage</SelectItem>
-                                <SelectItem value="rotator-cpu-core-1">Core 1 Usage</SelectItem>
-                                <SelectItem value="rotator-cpu-core-2">Core 2 Usage</SelectItem>
-                                <SelectItem value="rotator-cpu-core-3">Core 3 Usage</SelectItem>
-                                <SelectItem value="rotator-cpu-core-4">Core 4 Usage</SelectItem>
-                                <SelectItem value="rotator-cpu-core-5">Core 5 Usage</SelectItem>
-                                <SelectItem value="rotator-cpu-core-6">Core 6 Usage</SelectItem>
-                                <SelectItem value="rotator-cpu-core-7">Core 7 Usage</SelectItem>
-                                <SelectItem value="rotator-cpu-core-8">Core 8 Usage</SelectItem>
-                            </SelectContent>
-                        </Select>
+
+                    <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1 font-mono">Pivot Offset</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <PropertyInput 
+                                id='rotator-offset-x' 
+                                label='OX' 
+                                icon={UnfoldHorizontal}
+                                value={rotatorLayerProperties.offsetX} 
+                                onChange={value => handleInputChange('offsetX', value)}
+                                className="w-full"
+                            />
+                            <PropertyInput 
+                                id='rotator-offset-y' 
+                                label='OY' 
+                                icon={UnfoldVertical}
+                                value={rotatorLayerProperties.offsetY} 
+                                onChange={value => handleInputChange('offsetY', value)}
+                                className="w-full"
+                            />
+                        </div>
                     </div>
-                </SidebarGroup>
-            )}
-            {measureType === 'disk' && (
-                <SidebarGroup className="pb-0">
-                    <SidebarGroupLabel>Disk Measure</SidebarGroupLabel>
-                    <div className="flex space-x-4 px-2 py-2">
-                        {/* Select Measure Category */}
-                        <Select
-                            value={rotatorLayerProperties.measure}
-                            onValueChange={handleInputChange.bind(null, 'measure') as any}
-                            defaultValue='rotator-disk-c-usage'
-                        >
-                            <SelectTrigger id="category-select" className='w-52 shadow-none'>
-                                <SelectValue placeholder="Select Disk Measure" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="rotator-disk-c-usage">Disk C Usage</SelectItem>
-                            </SelectContent>
-                        </Select>
+
+                    <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1 font-mono">Angles (DEG)</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <PropertyInput 
+                                id='rotator-start-angle' 
+                                label='Start' 
+                                icon={CircleArrowOutUpRight}
+                                value={rotatorLayerProperties.startAngle} 
+                                onChange={value => handleInputChange('startAngle', value)}
+                                className="w-full"
+                            />
+                            <PropertyInput 
+                                id='rotator-rotation-angle' 
+                                label='Rot'
+                                icon={RotateCw} 
+                                value={rotatorLayerProperties.rotationAngle} 
+                                onChange={value => handleInputChange('rotationAngle', value)}
+                                className="w-full"
+                            />
+                        </div>
                     </div>
-                </SidebarGroup>
-            )}
+
+                    <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Measure</Label>
+                        <div className="flex flex-col gap-2">
+                            <Select value={measureType} onValueChange={handleMeasureTypeChange}>
+                                <SelectTrigger className='h-8 shadow-none bg-background/50 text-xs'>
+                                    <SelectValue placeholder="Select Type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value='time'>Time</SelectItem>
+                                    <SelectItem value="cpu">CPU</SelectItem>
+                                    <SelectItem value="disk">Disk</SelectItem>
+                                </SelectContent>
+                            </Select>
+
+                            <Select
+                                value={rotatorLayerProperties.measure}
+                                onValueChange={handleInputChange.bind(null, 'measure') as any}
+                            >
+                                <SelectTrigger className='h-8 shadow-none bg-background/50 text-xs'>
+                                    <SelectValue placeholder="Select Measure" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {measureType === 'time' && (
+                                        <>
+                                            <SelectItem value="rotator-time-second">Seconds</SelectItem>
+                                            <SelectItem value="rotator-time-minute">Minutes</SelectItem>
+                                            <SelectItem value="rotator-time-hour">Hours</SelectItem>
+                                        </>
+                                    )}
+                                    {measureType === 'cpu' && (
+                                        <>
+                                            <SelectItem value="rotator-cpu-average">Average CPU</SelectItem>
+                                            <SelectItem value="rotator-cpu-core-1">Core 1</SelectItem>
+                                            <SelectItem value="rotator-cpu-core-2">Core 2</SelectItem>
+                                        </>
+                                    )}
+                                    {measureType === 'disk' && (
+                                        <SelectItem value="rotator-disk-c-usage">Disk C Usage</SelectItem>
+                                    )}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                </div>
+            </CollapsibleSidebarGroup>
         </div>
     )
 }

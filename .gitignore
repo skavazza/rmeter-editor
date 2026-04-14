@@ -22,7 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
+.IniEditor
+.qwen
 
 # Added by cargo
 

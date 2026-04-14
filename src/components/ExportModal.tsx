@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -12,29 +12,21 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
+import { useSkinMetadata } from '@/context/SkinMetadataContext'
 
 interface ExportModalProps {
-  onExport: (metadata: { name: string; author: string; version: string; description: string}, allowScrollResize: boolean) => Promise<boolean>;
+  onExport: () => Promise<boolean>;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 const ExportModal: React.FC<ExportModalProps> = ({ onExport, open, onOpenChange }) => {
-  const [name, setName] = useState('')
-  const [author, setAuthor] = useState('')
-  const [version, setVersion] = useState('')
-  const [description, setDescription] = useState('')
-  const [allowScrollResize, setAllowScrollResize] = useState(false)
+  const { metadata, updateMetadata } = useSkinMetadata();
 
   const handleExport = async () => {
-    const success = await onExport({ name, author, version, description }, allowScrollResize)
+    const success = await onExport()
     if (success) {
       onOpenChange(false)
-      setName('')
-      setAuthor('')
-      setVersion('')
-      setDescription('')
-      setAllowScrollResize(false)
     }
   }
 
@@ -54,8 +46,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ onExport, open, onOpenChange 
             </Label>
             <Input
               id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={metadata.name}
+              onChange={(e) => updateMetadata({ name: e.target.value })}
               className="col-span-3"
             />
           </div>
@@ -65,8 +57,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ onExport, open, onOpenChange 
             </Label>
             <Input
               id="author"
-              value={author}
-              onChange={(e) => setAuthor(e.target.value)}
+              value={metadata.author}
+              onChange={(e) => updateMetadata({ author: e.target.value })}
               className="col-span-3"
             />
           </div>
@@ -76,8 +68,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ onExport, open, onOpenChange 
             </Label>
             <Input
               id="version"
-              value={version}
-              onChange={(e) => setVersion(e.target.value)}
+              value={metadata.version}
+              onChange={(e) => updateMetadata({ version: e.target.value })}
               className="col-span-3"
             />
           </div>
@@ -87,8 +79,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ onExport, open, onOpenChange 
             </Label>
             <Input
               id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={metadata.description}
+              onChange={(e) => updateMetadata({ description: e.target.value })}
               className="col-span-3"
             />
           </div>
@@ -97,8 +89,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ onExport, open, onOpenChange 
             <div>
               <Checkbox 
                 id="allowScrollResize" 
-                checked={allowScrollResize}
-                onCheckedChange={(checked) => setAllowScrollResize(checked as boolean)}
+                checked={metadata.allowScrollResize}
+                onCheckedChange={(checked) => updateMetadata({ allowScrollResize: checked as boolean })}
               />
               <label
                 htmlFor="allowScrollResize"

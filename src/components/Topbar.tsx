@@ -12,22 +12,22 @@ import ExportModal from './ExportModal'
 import { checkForAppUpdates } from '@/services/CheckForAppUpdates';
 import { version as appVersion } from '../../package.json';
 import { Badge } from './ui/badge';
-import { FaBug, FaDiscord } from 'react-icons/fa';
-import { open } from '@tauri-apps/plugin-shell';
+import { RainmeterService } from '@/services/RainmeterService';
+import { FaBug, FaDiscord, FaSync } from 'react-icons/fa';
+import { useIniFile } from '@/context/IniFileContext';
+import { open as openUrl } from '@tauri-apps/plugin-shell';
 
 const Topbar: React.FC = () => {
-  const [version, setVersion] = useState('1.0.0'); // Add version state
+  const [version, setVersion] = useState('1.0.0');
   const v = appVersion;
+  const { currentIniFile } = useIniFile();
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     checkForAppUpdates(false);
-    // Fetch version number if needed
-    // setVersion(fetchVersionNumber());
     setVersion(v);
-  }, []);
-
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const { toast } = useToast();
+  }, [v]);
 
   const handleExport = async (metadata: { name: string; author: string; version: string; description: string},  allowScrollResize: boolean ) => {
     const success = await handleCreateDirectory(metadata, allowScrollResize);
@@ -48,12 +48,31 @@ const Topbar: React.FC = () => {
     return success;
   };
 
-  // const handleRefresh = async () => {
-  //   // await Window
-  //   // await Webview.reload();
-  //   // await getCurrentWindow().refr
-  //   // await getCurrentWebview().;
-  // };
+  const handleRefresh = async () => {
+    let skinName = undefined;
+    if (currentIniFile) {
+      // Extract skin name from path: .../Skins/Suite/Skin/Skin.ini -> Suite/Skin
+      const parts = currentIniFile.split(/[\\/]/);
+      const skinsIndex = parts.findIndex(p => p.toLowerCase() === 'skins');
+      if (skinsIndex !== -1 && skinsIndex < parts.length - 2) {
+        skinName = parts.slice(skinsIndex + 1, -1).join('\\');
+      }
+    }
+    
+    const success = await RainmeterService.refreshSkin(skinName);
+    if (success) {
+      toast({
+        title: "✅ Skin Updated",
+        description: skinName ? `!Refresh "${skinName}" sent.` : "!RefreshApp sent.",
+      });
+    } else {
+      toast({
+        title: "❌ Error updating",
+        description: "Make sure Rainmeter is open.",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <TooltipProvider>
@@ -62,26 +81,27 @@ const Topbar: React.FC = () => {
           Rainmeter Editor <Badge variant="outline">v{version}</Badge>
         </div>
         <div className="flex items-center space-x-2">
-          {/* <Tooltip>
+          <Tooltip>
             <TooltipTrigger asChild>
               <Button 
                 variant="outline"
-                onClick={handleRefresh} // Trigger refresh action
-                className="hover:text-primary"
+                onClick={handleRefresh}
+                className="hover:text-primary h-9 w-9 p-0"
               >
                 <FaSync />
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Refresh</p>
+              <p>Refresh Skin</p>
             </TooltipContent>
-          </Tooltip> */}
+          </Tooltip>
+
           <Tooltip>
             <TooltipTrigger asChild>
               <Button 
                 variant="outline"
-                onClick={() => open("https://discord.gg/tzY82KkS4H")} 
-                className="hover:text-primary"
+                onClick={() => openUrl("https://discord.gg/tzY82KkS4H")} 
+                className="hover:text-primary h-9 w-9 p-0"
               >
                 <FaDiscord />
               </Button>
@@ -95,9 +115,8 @@ const Topbar: React.FC = () => {
             <TooltipTrigger asChild>
               <Button 
                 variant="outline"
-                onClick={() => open("https://github.com/kethakav/rainmeter-editor/issues")} 
-                
-                className="hover:text-destructive"
+                onClick={() => openUrl("https://github.com/kethakav/rainmeter-editor/issues")} 
+                className="hover:text-destructive h-9 w-9 p-0"
               >
                 <FaBug />
               </Button>

@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import PropertyInput from "../customUI/PropertyInput";
 import { SidebarGroup, SidebarGroupLabel, SidebarSeparator } from "../ui/sidebar";
-import { Axis3D } from "lucide-react";
+import { Axis3D, ImageIcon } from "lucide-react";
 import { layerManager } from "@/services/LayerManager";
 import { useLayerContext } from "@/context/LayerContext";
 import { FabricImage } from "fabric";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "../ui/button";
+import CommonProperties from "./CommonProperties";
+import CollapsibleSidebarGroup from "./CollapsibleSidebarGroup";
+import { Label } from "../ui/label";
 
 const ImageLayerProperties: React.FC = () => {
 
@@ -15,11 +18,7 @@ const ImageLayerProperties: React.FC = () => {
     const selectedLayerId = selectedLayer?.id;
 
     const [imageLayerProperties, setImageLayerProperties] = useState({
-        x: '',
-        y: '',
         rotation: '',
-        height: '',
-        width: ''
     })
 
     useEffect(() => {
@@ -28,11 +27,7 @@ const ImageLayerProperties: React.FC = () => {
             if (layer && layer.type === 'image') {
                 const imageLayer = layer.fabricObject as FabricImage;
                 setImageLayerProperties({
-                    x: imageLayer.left.toString(),
-                    y: imageLayer.top.toString(),
-                    rotation: imageLayer.angle.toString(),
-                    height: (imageLayer.scaleY * imageLayer.height).toString(),
-                    width: (imageLayer.scaleX * imageLayer.width).toString()
+                    rotation: Math.round(imageLayer.angle || 0).toString(),
                 })
             }
         }
@@ -62,27 +57,9 @@ const ImageLayerProperties: React.FC = () => {
             const layer = layerManager.getLayers().find(layer => layer.id === selectedLayerId);
             if (layer && layer.type === 'image') {
                 const imageLayer = layer.fabricObject as FabricImage;
-                if (field === 'x') {
-                    imageLayer.set({ left: Number(value) });
-                } else if (field === 'y') {
-                    imageLayer.set({ top: Number(value) });
-                } else if (field === 'rotation') {
+                if (field === 'rotation') {
                     imageLayer.set({ angle: Number(value) });
                 } 
-                const numValue = Math.max(1, Number(value)); // Ensure minimum value is 1
-                if (field === 'width') {
-                    imageLayer.scaleX = numValue / (imageLayer.width || 1);
-                    setImageLayerProperties(prev => ({
-                    ...prev,
-                    width: numValue.toString()
-                    }));
-                } if (field === 'height') {
-                    imageLayer.scaleY = numValue / (imageLayer.height || 1);
-                    setImageLayerProperties(prev => ({
-                    ...prev,
-                    height: numValue.toString()
-                    }));
-                }
 
                 setImageLayerProperties(prev => ({ ...prev, [field]: value }));
 
@@ -99,83 +76,50 @@ const ImageLayerProperties: React.FC = () => {
             filters: [
                 {
                     name: 'Images',
-                    extensions: ['png'],
+                    extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif'],
                 },
             ],
         });
-        if (!selectedFile) return;
+        if (!selectedFile || typeof selectedFile !== 'string') return;
         layerManager.updateImageForSelectedLayer(selectedFile);
-
     }
 
     return (
-        <div>
-            <SidebarGroup>
-                <SidebarGroupLabel>Image Properties</SidebarGroupLabel>
-            </SidebarGroup>
-            <SidebarSeparator />
-            <SidebarGroup>
-                <SidebarGroupLabel>Image</SidebarGroupLabel>
-                <div className="flex space-x-4 px-2 py-2">
-                    {/* Source */}
-                    <Button 
-                        variant="outline" 
-                        onClick={handleImageSourceUpdate}
-                        className="shadow-none"
+        <div className="flex flex-col gap-0">
+            <CommonProperties />
+            
+            <CollapsibleSidebarGroup 
+                label="Image Properties" 
+                icon={<ImageIcon className="h-4 w-4" />}
+            >
+                <div className="space-y-4 px-3 py-2">
+                    <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Image Source</Label>
+                        <Button 
+                            variant="outline" 
+                            onClick={handleImageSourceUpdate}
+                            className="w-full h-8 shadow-none text-xs bg-background/50"
                         >
-                        Change Image
-                    </Button>
-                </div>
-            </SidebarGroup>
-            <SidebarSeparator />
-            <SidebarGroup>
-                <SidebarGroupLabel>Transform</SidebarGroupLabel>
-                <div className="flex space-x-4 px-2 py-2">
-                    {/* X Position */}
-                    <PropertyInput 
-                        id='image-x' 
-                        label='X' 
-                        value={imageLayerProperties.x} 
-                        onChange={value => handleInputChange('x', value)}   
-                    />
+                            Change Image
+                        </Button>
+                    </div>
 
-                    {/* Y Position */}
-                    <PropertyInput 
-                        id='image-y' 
-                        label='Y' 
-                        value={imageLayerProperties.y} 
-                        onChange={value => handleInputChange('y', value)}
-                    />
+                    <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Rotation</Label>
+                        <div className="flex items-center gap-2">
+                            <PropertyInput 
+                                id='image-rotation' 
+                                label='Rotation'
+                                icon={Axis3D}
+                                value={imageLayerProperties.rotation} 
+                                onChange={value => handleInputChange('rotation', value)}
+                                className="flex-1"
+                            />
+                            <span className="text-[10px] text-muted-foreground font-mono">DEG</span>
+                        </div>
+                    </div>
                 </div>
-                <div className="flex space-x-4 px-2 py-2">
-                    {/* Width */}
-                    <PropertyInput 
-                        id='image-width' 
-                        label='W' 
-                        value={imageLayerProperties.width} 
-                        onChange={value => handleInputChange('width', value)}
-                    />
-
-                    {/* Height */}
-                    <PropertyInput 
-                        id='image-height' 
-                        label='H' 
-                        value={imageLayerProperties.height} 
-                        onChange={value => handleInputChange('height', value)}
-                    />
-                </div>
-                <div className="flex space-x-4 px-2 py-2">
-                    {/* Rotation */}
-                    <PropertyInput 
-                        id='image-rotation' 
-                        label='Rotation'
-                        icon={Axis3D}
-                        value={imageLayerProperties.rotation} 
-                        onChange={value => handleInputChange('rotation', value)}
-                    />
-                </div>
-            </SidebarGroup>
-            <SidebarSeparator />
+            </CollapsibleSidebarGroup>
         </div>
     );
 }

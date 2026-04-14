@@ -2,17 +2,23 @@
 // import { useToolContext } from '@/context/ToolContext';
 import { arrayMove } from '@dnd-kit/sortable';
 import { join, resourceDir } from '@tauri-apps/api/path';
-import { Canvas, Circle, FabricObject, FabricObjectProps, Rect, Triangle, IText, FabricImage, Group, Line, Text} from 'fabric';
+import { Canvas, Circle, Ellipse, FabricObject, FabricObjectProps, Rect, Triangle, IText, FabricImage, Group, Line, Text} from 'fabric';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { SingleFontLoad } from './singleFontLoad';
+import UndoRedoManager from './UndoRedoManager';
+import { AddLayerCommand } from './commands';
+
+import { IniParser } from '../lib/IniParser';
+import { RainmeterUtils } from '../lib/RainmeterUtils';
 
 // Enum for layer types
-enum LayerType {
+export enum LayerType {
   TEXT = 'text',
   SHAPE = 'shape',
   IMAGE = 'image',
   ROTATOR = 'rotator',
   BAR = 'bar',
+  ROUNDLINE = 'roundline',
 }
 
 interface LayerProperties {
@@ -21,7 +27,7 @@ interface LayerProperties {
 }
 
 // Interface for layer properties
-interface LayerConfig {
+export interface LayerConfig {
   id: string;
   // mmtype: string;
   type: LayerType;
@@ -54,12 +60,84 @@ class LayerManager {
       [LayerType.IMAGE]: 0,
       [LayerType.ROTATOR]: 0,
       [LayerType.BAR]: 0,
+      [LayerType.ROUNDLINE]: 0,
     };
   
     private constructor() {} // Make the constructor private
 
+    public clearLayers() {
+      try {
+        if (this.canvas) {
+          this.layers.forEach(layer => {
+            try {
+              this.canvas?.remove(layer.fabricObject);
+              if (layer.UIElements) {
+                this.canvas?.remove(layer.UIElements);
+              }
+            } catch (removeError) {
+              console.warn('Error removing layer:', removeError);
+            }
+          });
+        }
+      } catch (clearError) {
+        console.error('Error in clearLayers:', clearError);
+      }
+      
+      this.layers = [];
+      this.layerCounts = {
+        [LayerType.TEXT]: 0,
+        [LayerType.SHAPE]: 0,
+        [LayerType.IMAGE]: 0,
+        [LayerType.ROTATOR]: 0,
+        [LayerType.BAR]: 0,
+        [LayerType.ROUNDLINE]: 0,
+      };
+      this.notifyListeners();
+    }
+
     
   
+    public async loadFromProject(layersData: any[]) {
+      this.clearLayers();
+      
+      const fabricObjects = await util.enlivenObjects(layersData.map(l => l.fabricObject));
+      
+      for (let i = 0; i < layersData.length; i++) {
+        const data = layersData[i];
+        const fabricObj = fabricObjects[i] as FabricObject;
+        
+        // Re-generate UIElements (they are editor-only overlays)
+        let uiElements = new Group();
+        if (data.type === LayerType.ROTATOR) {
+            // Re-create rotator UI specific elements if needed
+            // For now, we'll use an empty group or recreate basic ones
+        }
+
+        const newLayer: LayerConfig = {
+          id: data.id,
+          type: data.type,
+          fabricObject: fabricObj,
+          visible: data.visible,
+          locked: data.locked,
+          name: data.name,
+          measure: data.measure,
+          fontName: data.fontName,
+          imageSrc: data.imageSrc,
+          UIElements: uiElements,
+          properties: data.properties,
+        };
+
+        if (this.canvas) {
+          this.canvas.add(fabricObj);
+          this.canvas.add(uiElements);
+        }
+        this.layers.push(newLayer);
+      }
+      
+      this.notifyListeners();
+      this.canvas?.renderAll();
+    }
+
     public static getInstance(): LayerManager {
       if (!LayerManager.instance) {
         LayerManager.instance = new LayerManager();
@@ -146,40 +224,51 @@ class LayerManager {
     this.toolChangeListeners = this.toolChangeListeners.filter(l => l !== listener);
   }
 
-  addLayerWithMouse(x: number, y: number) {
+  async addLayerWithMouse(x: number, y: number) {
     if(this.canvas) {
+      const defaultName = this.generateLayerName(this.activeTool as LayerType);
+      const name = window.prompt(`Enter name for the new ${this.activeTool} layer:`, defaultName);
+      
+      if (name === null) return; // User cancelled
+      const finalName = name.trim() || defaultName;
+
       if (this.activeTool === 'text') {
-        this.addTextLayer("Hello There!", x, y);
+        await this.addTextLayer("Hello There!", x, y, finalName);
         this.setActiveTool('select');
       }
       if (this.activeTool === 'image') {
-        this.addImageLayer(x, y);
+        await this.addImageLayer(x, y, finalName);
         this.setActiveTool('select');
       }
       if (this.activeTool === 'rotator') {
-        this.addRotatorLayer(x, y);
+        await this.addRotatorLayer(x, y, finalName);
         this.setActiveTool('select');
       }
       if (this.activeTool === 'bar') {
-        this.addBarLayer(x, y);
+        await this.addBarLayer(x, y, finalName);
+        this.setActiveTool('select');
+      }
+      if (this.activeTool === 'shape') {
+        await this.addShapeLayer(x, y, finalName);
+        this.setActiveTool('select');
+      }
+      if (this.activeTool === 'roundline') {
+        await this.addRoundlineLayer(x, y, finalName);
         this.setActiveTool('select');
       }
     }
-
-    return;
   }
 
   // Add a new layer to the stack
-  addLayer(type: LayerType, fabricObject: FabricObject, imageSrc: string = "", UIElements: FabricObject = new Group(), properties: LayerProperties[] = []) {
+  addLayer(type: LayerType, fabricObject: FabricObject, imageSrc: string = "", UIElements: FabricObject = new Group(), properties: LayerProperties[] = [], skipUndoRegister: boolean = false, providedName?: string) {
     if (this.canvas) {
       const newLayer: LayerConfig = {
         id: this.generateUniqueId(),
-        // mmtype,
         type,
         fabricObject,
         visible: true,
         locked: false,
-        name: this.generateLayerName(type),
+        name: providedName || this.generateLayerName(type),
         measure: "",
         fontName: "null",
         imageSrc: imageSrc,
@@ -201,6 +290,12 @@ class LayerManager {
       this.layers.push(newLayer);
       this.notifyListeners();
 
+      // Register with Undo/Redo system (only if not skipping)
+      if (!skipUndoRegister) {
+        const command = new AddLayerCommand(type, newLayer.id);
+        UndoRedoManager.getInstance().execute(command);
+      }
+
       // Select the newly added layer
       this.selectLayer(newLayer.id);
 
@@ -210,7 +305,7 @@ class LayerManager {
   }
 
   // Add text layer
-  async addTextLayer(text: string = 'Hello There!', x: number, y: number) {
+  async addTextLayer(text: string = 'Hello There!', x: number, y: number, name?: string) {
     await SingleFontLoad('Abtera Bold');
     
     if (this.canvas) {
@@ -223,9 +318,8 @@ class LayerManager {
         fontSize: 24,
         hasControls: false,
         });
-        console.log(this.layers);
 
-        this.addLayer(LayerType.TEXT, textObject);
+        this.addLayer(LayerType.TEXT, textObject, "", new Group(), [], false, name);
     } else {
         return null;
     }
@@ -412,32 +506,13 @@ class LayerManager {
     }
   }
 
-  async addImageLayer(x: number, y: number) {
+  async addImageLayer(x: number, y: number, name?: string) {
     if (this.canvas) {
-        // Open a file dialog to select an image
-        // const selectedFile = await open({
-        //     title: 'Select an Image',
-        //     filters: [
-        //         {
-        //             name: 'Images',
-        //             extensions: ['png'],
-        //         },
-        //     ],
-        // });
-
         const resPath = await resourceDir();
         const sourcePath = await join(resPath, '_up_/public/images/image-placeholder.png');
         
-
-        // Check if a file was selected
         if (sourcePath) {
-            // Convert to the appropriate format (string if selectedFile is a File)
-            // const sourcePath = await join(selectedFile as string);
             const assetUrl = convertFileSrc(sourcePath);
-            console.log(sourcePath);
-            console.log(assetUrl);
-            
-            // Use fromURL correctly with await
             try {
                 const img: FabricImage = await FabricImage.fromURL(assetUrl, { crossOrigin: 'anonymous' });
                 img.set({
@@ -451,7 +526,7 @@ class LayerManager {
                     originY: 'center',
                     hasControls: false,
                 });
-                this.addLayer(LayerType.IMAGE, img, sourcePath);
+                this.addLayer(LayerType.IMAGE, img, sourcePath, new Group(), [], false, name);
             } catch (error) {
                 console.error("Error loading image:", error);
             }
@@ -461,7 +536,7 @@ class LayerManager {
     }
   }
 
-  async addRotatorLayer(x: number, y: number) {
+  async addRotatorLayer(x: number, y: number, name?: string) {
     if (this.canvas) {
       const resPath = await resourceDir();
       const source = await join(resPath, '_up_/public/images/Needle.png');
@@ -568,7 +643,7 @@ class LayerManager {
               value: "90"
             }
           ];
-          this.addLayer(LayerType.ROTATOR, img, source, UIElements, layerProperties);
+          this.addLayer(LayerType.ROTATOR, img, source, UIElements, layerProperties, false, name);
       } catch (error) {
           console.error("Error loading image:", error);
       }
@@ -578,7 +653,7 @@ class LayerManager {
     }
   }
 
-  async addBarLayer(x: number, y: number) {
+  async addBarLayer(x: number, y: number, name?: string) {
     if (this.canvas) {
       try {
         const background = new Rect({
@@ -613,7 +688,7 @@ class LayerManager {
         //     value: '0'
         //   }
         // ];
-        this.addLayer(LayerType.BAR, bar);
+        this.addLayer(LayerType.BAR, bar, "", new Group(), [], false, name);
       } catch (error) {
         console.error("Error loading image:", error);
       }
@@ -638,27 +713,27 @@ class LayerManager {
 }
 
   // Add shape layer
-  addShapeLayer(type: 'rect' | 'circle' | 'triangle', options: Partial<FabricObjectProps> = {}) {
+  addShapeLayer(x: number, y: number, name?: string, type: 'rect' | 'circle' | 'triangle' = 'rect', options: Partial<FabricObjectProps> = {}) {
     if (this.canvas) {
         let shapeObject: FabricObject;
-    
+
         switch(type) {
         case 'rect':
             shapeObject = new Rect({
             width: 100,
             height: 100,
-            fill: 'blue',
-            left: 100,
-            top: 100,
+            fill: 'rgba(100, 100, 255, 0.3)',
+            left: x,
+            top: y,
             ...options
             });
             break;
         case 'circle':
             shapeObject = new Circle({
             radius: 50,
-            fill: 'green',
-            left: 100,
-            top: 100,
+            fill: 'rgba(100, 255, 100, 0.3)',
+            left: x,
+            top: y,
             ...options
             });
             break;
@@ -666,19 +741,58 @@ class LayerManager {
             shapeObject = new Triangle({
             width: 100,
             height: 100,
-            fill: 'red',
-            left: 100,
-            top: 100,
+            fill: 'rgba(255, 100, 100, 0.3)',
+            left: x,
+            top: y,
             ...options
             });
             break;
         }
 
-        this.addLayer(LayerType.SHAPE, shapeObject);
-    } 
-    // else {
-    //     return null;
-    // }
+        this.addLayer(LayerType.SHAPE, shapeObject, "", new Group(), [], false, name);
+    }
+  }
+
+  // Add roundline layer
+  addRoundlineLayer(x: number, y: number, name?: string, options: { w?: number; h?: number; lineColor?: string; solidColor?: string } = {}) {
+    if (this.canvas) {
+      const { w = 100, h = 100, lineColor = '255,255,255,255', solidColor = '50,50,50,180' } = options;
+      const radius = Math.min(w, h) / 2;
+      const lineLength = radius * 0.8;
+      const lineStart = radius * 0.3;
+      const lineWidth = 4;
+      const startAngle = 0;
+
+      // Draw track (background circle)
+      const trackCircle = new Circle({
+        left: x + w / 2,
+        top: y + h / 2,
+        radius: lineStart + (lineLength - lineStart) / 2,
+        fill: 'transparent',
+        stroke: this.parseRainmeterColor(solidColor),
+        strokeWidth: lineWidth,
+        selectable: false,
+        evented: false,
+      });
+
+      // Draw line (indicator)
+      const endX = x + w / 2 + Math.cos(startAngle) * lineLength;
+      const endY = y + h / 2 + Math.sin(startAngle) * lineLength;
+      const indicatorLine = new Line([x + w / 2, y + h / 2, endX, endY], {
+        stroke: this.parseRainmeterColor(lineColor),
+        strokeWidth: lineWidth,
+        selectable: false,
+        evented: false,
+      });
+
+      const roundlineGroup = new Group([trackCircle, indicatorLine], {
+        left: x,
+        top: y,
+        hasControls: false,
+      });
+
+      this.addLayer(LayerType.ROUNDLINE, roundlineGroup, "", new Group(), [], false, name);
+    }
   }
 
   // Add image layer
@@ -847,9 +961,259 @@ class LayerManager {
       [LayerType.IMAGE]: 'Image',
       [LayerType.ROTATOR]: 'Rotator',
       [LayerType.BAR]: 'Bar',
+      [LayerType.ROUNDLINE]: 'Roundline',
     };
     
     return `${typeLabels[type]}${this.layerCounts[type]}`;
+  }
+
+  public async loadFromIni(content: string, resourcesDir: string = ''): Promise<SkinMetadata> {
+    if (!this.canvas) {
+      console.warn('Canvas not available, loading INI without canvas rendering');
+    }
+
+    try {
+      this.clearLayers();
+      const sections = IniParser.parse(content);
+      const metadata = RainmeterUtils.parseMetadata(sections);
+      const rawVars = RainmeterUtils.parseVariables(sections);
+      // Ensure #Scale# is always resolvable for canvas rendering, default to 1.0
+      if (!rawVars['scale']) rawVars['scale'] = '1.0';
+      
+      const variables = RainmeterUtils.resolveVariableReferences(rawVars);
+      let prevObject: FabricObject | null = null;
+
+      for (const section of sections) {
+        // Create a normalized version of params for case-insensitive lookup
+        const normalizedParams: Record<string, string> = {};
+        Object.entries(section.params).forEach(([k, v]) => {
+          normalizedParams[k.toLowerCase()] = v;
+        });
+
+        if (!normalizedParams.meter) continue;
+
+        try {
+          const type = normalizedParams.meter.toLowerCase();
+          const resolvedProps = RainmeterUtils.resolveVariables(normalizedParams, variables, resourcesDir);
+          const x = this.parseCoordinate(resolvedProps.x || '0', prevObject, false);
+          const y = this.parseCoordinate(resolvedProps.y || '0', prevObject, true);
+          let fabricObj: FabricObject | null = null;
+
+          if (type === 'string') {
+            fabricObj = new IText(resolvedProps.text || section.name, {
+              left: x,
+              top: y,
+              fontSize: parseFloat(resolvedProps.fontsize || '12') * 1.33,
+              fontFamily: resolvedProps.fontface || 'Arial',
+              fill: this.parseRainmeterColor(resolvedProps.fontcolor || '0,0,0,255'),
+              hasControls: false,
+            });
+            this.addLayer(LayerType.TEXT, fabricObj, "", new Group(), [], true, section.name);
+          } else if (type === 'image') {
+            const imgSrc = resolvedProps.imagename || '';
+            const assetUrl = imgSrc ? convertFileSrc(imgSrc) : '';
+            try {
+              const img: FabricImage = await FabricImage.fromURL(assetUrl, { crossOrigin: 'anonymous' });
+              img.set({
+                left: x,
+                top: y,
+                scaleX: resolvedProps.w ? parseFloat(resolvedProps.w) / img.width : 1,
+                scaleY: resolvedProps.h ? parseFloat(resolvedProps.h) / img.height : 1,
+                hasControls: false,
+              });
+              fabricObj = img;
+              this.addLayer(LayerType.IMAGE, fabricObj, imgSrc, new Group(), [], true, section.name);
+            } catch (e) {
+              console.error("Error loading image:", e);
+            }
+          } else if (type === 'roundline') {
+            const w = parseFloat(resolvedProps.w || '100');
+            const h = parseFloat(resolvedProps.h || '100');
+            const radius = Math.min(w, h) / 2;
+            const lineLength = parseFloat(resolvedProps.linelength || String(radius * 0.8));
+            const lineStart = parseFloat(resolvedProps.linestart || String(radius * 0.3));
+            const lineWidth = parseFloat(resolvedProps.linewidth || '4');
+            const startAngle = parseFloat(resolvedProps.startangle || '0') * (Math.PI / 180);
+            const objects: FabricObject[] = [];
+            if (resolvedProps.solidcolor) {
+              objects.push(new Circle({
+                left: w / 2,
+                top: h / 2,
+                radius: lineStart + (lineLength - lineStart) / 2,
+                fill: 'transparent',
+                stroke: this.parseRainmeterColor(resolvedProps.solidcolor),
+                strokeWidth: lineWidth,
+                selectable: false,
+                evented: false,
+              }));
+            }
+            const endX = w / 2 + Math.cos(startAngle) * lineLength;
+            const endY = h / 2 + Math.sin(startAngle) * lineLength;
+            objects.push(new Line([w / 2, h / 2, endX, endY], {
+              stroke: this.parseRainmeterColor(resolvedProps.linecolor || '255,255,255,255'),
+              strokeWidth: lineWidth,
+              selectable: false,
+              evented: false,
+            }));
+            const roundlineGroup = new Group(objects, { left: x, top: y, hasControls: false });
+            fabricObj = roundlineGroup;
+            this.addLayer(LayerType.ROUNDLINE, fabricObj, "", new Group(), [], true, section.name);
+          } else if (type === 'shape') {
+            const w = parseFloat(resolvedProps.w || '100');
+            const h = parseFloat(resolvedProps.h || '100');
+            const shapeDef = resolvedProps.shape || '';
+            let shapeObj: FabricObject;
+            if (shapeDef.toLowerCase().includes('rectangle')) {
+              const rectMatch = shapeDef.match(/Rectangle\s+([\d,.]+)/i);
+              if (rectMatch) {
+                const coords = rectMatch[1].split(',').map(Number);
+                const [rx, ry, rw, rh, rCorner = 0] = coords;
+                shapeObj = new Rect({
+                  left: x + (rx || 0),
+                  top: y + (ry || 0),
+                  width: rw || w,
+                  height: rh || h,
+                  rx: rCorner,
+                  ry: rCorner,
+                  fill: this.parseShapeFill(shapeDef),
+                  stroke: this.parseShapeStroke(shapeDef),
+                  strokeWidth: this.parseShapeStrokeWidth(shapeDef),
+                  hasControls: false,
+                });
+              } else {
+                shapeObj = new Rect({ left: x, top: y, width: w, height: h, fill: 'rgba(100, 100, 255, 0.2)', hasControls: false });
+              }
+            } else if (shapeDef.toLowerCase().includes('ellipse')) {
+              const ellipseMatch = shapeDef.match(/Ellipse\s+([\d,.]+)/i);
+              if (ellipseMatch) {
+                const coords = ellipseMatch[1].split(',').map(Number);
+                const [cx, cy, rx, ry] = coords;
+                shapeObj = new Ellipse({
+                  left: x + (cx || 0) - (rx || w / 2),
+                  top: y + (cy || 0) - (ry || h / 2),
+                  rx: rx || w / 2,
+                  ry: ry || h / 2,
+                  fill: this.parseShapeFill(shapeDef),
+                  stroke: this.parseShapeStroke(shapeDef),
+                  strokeWidth: this.parseShapeStrokeWidth(shapeDef),
+                  hasControls: false,
+                });
+              } else {
+                shapeObj = new Ellipse({ left: x, top: y, rx: w / 2, ry: h / 2, fill: 'rgba(100, 255, 100, 0.2)', hasControls: false });
+              }
+            } else {
+              shapeObj = new Rect({ left: x, top: y, width: w, height: h, fill: 'rgba(255, 165, 0, 0.2)', hasControls: false });
+            }
+            fabricObj = shapeObj;
+            this.addLayer(LayerType.SHAPE, fabricObj, "", new Group(), [], true, section.name);
+          } else if (type === 'bar') {
+            const w = parseFloat(resolvedProps.w || '100');
+            const h = parseFloat(resolvedProps.h || '100');
+            const barObj = new Rect({
+              left: x,
+              top: y,
+              width: w,
+              height: h,
+              fill: this.parseRainmeterColor(resolvedProps.barcolor || '0, 120, 255, 255'),
+              stroke: this.parseRainmeterColor(resolvedProps.barbordercolor || '100, 100, 100, 255'),
+              strokeWidth: parseFloat(resolvedProps.barborderwidth || '0'),
+              hasControls: false,
+            });
+            fabricObj = barObj;
+            this.addLayer(LayerType.BAR, fabricObj, "", new Group(), [], true, section.name);
+          } else if (type === 'rotator') {
+            const imgSrc = resolvedProps.imagename || '';
+            const assetUrl = imgSrc ? convertFileSrc(imgSrc) : '';
+            try {
+              const img: FabricImage = await FabricImage.fromURL(assetUrl, { crossOrigin: 'anonymous' });
+              img.set({ left: x, top: y, originX: 'center', originY: 'center', hasControls: false });
+              fabricObj = img;
+              this.addLayer(LayerType.ROTATOR, fabricObj, imgSrc, new Group(), [], true, section.name);
+            } catch (e) {
+              console.error("Error loading rotator image:", e);
+            }
+          }
+
+          if (fabricObj) {
+            prevObject = fabricObj;
+          }
+        } catch (sectionError) {
+          console.warn(`Error loading section ${section.name}:`, sectionError);
+        }
+      }
+
+      this.canvas?.renderAll();
+      return metadata;
+    } catch (error) {
+      console.error('Fatal error in loadFromIni:', error);
+      throw error;
+    }
+  }
+
+  private parseCoordinate(value: string, prevObject: FabricObject | null, isY: boolean): number {
+    // Handle Rainmeter math patterns like (100 * #Scale#) or (50 * #Scale#)
+    const cleanValue = value.replace(/\(|\)|#Scale#|[*]|\s/g, '');
+    
+    let numeric = cleanValue.replace(/[rR%]/g, '');
+    let val = parseFloat(numeric) || 0;
+
+    if (value.endsWith('%')) {
+      // Handle percentage if needed, for now assume 1920x1080 if background not set
+      const ref = isY ? (this.skinBackground?.height || 1080) : (this.skinBackground?.width || 1920);
+      return (val / 100) * ref;
+    }
+
+    if (prevObject) {
+      if (value.endsWith('r')) {
+        return (isY ? prevObject.top : prevObject.left) + val;
+      } else if (value.endsWith('R')) {
+        const dim = isY ? prevObject.height * prevObject.scaleY : prevObject.width * prevObject.scaleX;
+        return (isY ? prevObject.top : prevObject.left) + dim + val;
+      }
+    }
+
+    return val;
+  }
+
+  private parseRainmeterColor(colorStr: string): string {
+    const parts = colorStr.split(',').map(p => p.trim());
+    if (parts.length >= 3) {
+      const r = parts[0];
+      const g = parts[1];
+      const b = parts[2];
+      const a = parts[3] ? (parseInt(parts[3]) / 255).toFixed(2) : '1';
+      return `rgba(${r},${g},${b},${a})`;
+    }
+    return colorStr;
+  }
+
+  // Helper functions for parsing Shape meter properties
+  private parseShapeFill(shapeDef: string): string {
+    const fillMatch = shapeDef.match(/Fill\s+Color\s+([\d,]+)/i);
+    if (fillMatch) {
+      return this.parseRainmeterColor(fillMatch[1]);
+    }
+    const fillGradMatch = shapeDef.match(/Fill\s+LinearGradient\s+(\w+)/i);
+    if (fillGradMatch) {
+      return 'rgba(100, 100, 255, 0.3)'; // Simplified gradient representation
+    }
+    return 'rgba(150, 150, 150, 0.2)';
+  }
+
+  private parseShapeStroke(shapeDef: string): string | undefined {
+    const strokeMatch = shapeDef.match(/Stroke\s+Color\s+([\d,]+)/i);
+    if (strokeMatch) {
+      return this.parseRainmeterColor(strokeMatch[1]);
+    }
+    return undefined;
+  }
+
+  private parseShapeStrokeWidth(shapeDef: string): number {
+    const widthMatch = shapeDef.match(/StrokeWidth\s+([\d.]+)/i);
+    if (widthMatch) {
+      return parseFloat(widthMatch[1]);
+    }
+    return 0;
   }
 
   // Get all layers
