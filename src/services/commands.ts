@@ -97,6 +97,8 @@ export class MoveLayerCommand implements Command {
   private oldY: number;
   private newX: number;
   private newY: number;
+  private oldProperties: any[] = [];
+  private newProperties: any[] = [];
   
   constructor(layerId: string, oldX: number, oldY: number, newX: number, newY: number) {
     this.name = `Move layer`;
@@ -105,18 +107,37 @@ export class MoveLayerCommand implements Command {
     this.oldY = oldY;
     this.newX = newX;
     this.newY = newY;
+
+    const layer = layerManager.layers.find((l: any) => l.id === this.layerId);
+    if (layer) {
+      this.oldProperties = JSON.parse(JSON.stringify(layer.properties));
+    }
   }
 
   execute(): void {
     this.applyPosition(this.newX, this.newY);
+    layerManager.syncLayerFromFabricMovement(this.layerId);
+    
+    const layer = layerManager.layers.find((l: any) => l.id === this.layerId);
+    if (layer) {
+      this.newProperties = JSON.parse(JSON.stringify(layer.properties));
+    }
   }
 
   undo(): void {
-    this.applyPosition(this.oldX, this.oldY);
+    const layer = layerManager.layers.find((l: any) => l.id === this.layerId);
+    if (layer) {
+      layer.properties = JSON.parse(JSON.stringify(this.oldProperties));
+      this.applyPosition(this.oldX, this.oldY);
+    }
   }
 
   redo(): void {
-    this.applyPosition(this.newX, this.newY);
+    const layer = layerManager.layers.find((l: any) => l.id === this.layerId);
+    if (layer) {
+      layer.properties = JSON.parse(JSON.stringify(this.newProperties));
+      this.applyPosition(this.newX, this.newY);
+    }
   }
 
   private applyPosition(x: number, y: number): void {
@@ -138,6 +159,8 @@ export class ResizeLayerCommand implements Command {
   private oldScaleY: number;
   private newScaleX: number;
   private newScaleY: number;
+  private oldProperties: any[] = [];
+  private newProperties: any[] = [];
   
   constructor(layerId: string, oldScaleX: number, oldScaleY: number, newScaleX: number, newScaleY: number) {
     this.name = `Resize layer`;
@@ -146,18 +169,37 @@ export class ResizeLayerCommand implements Command {
     this.oldScaleY = oldScaleY;
     this.newScaleX = newScaleX;
     this.newScaleY = newScaleY;
+    
+    const layer = layerManager.layers.find((l: any) => l.id === this.layerId);
+    if (layer) {
+      this.oldProperties = JSON.parse(JSON.stringify(layer.properties));
+    }
   }
 
   execute(): void {
     this.applyScale(this.newScaleX, this.newScaleY);
+    layerManager.syncLayerFromFabricScale(this.layerId);
+    
+    const layer = layerManager.layers.find((l: any) => l.id === this.layerId);
+    if (layer) {
+      this.newProperties = JSON.parse(JSON.stringify(layer.properties));
+    }
   }
 
   undo(): void {
-    this.applyScale(this.oldScaleX, this.oldScaleY);
+    const layer = layerManager.layers.find((l: any) => l.id === this.layerId);
+    if (layer) {
+      layer.properties = JSON.parse(JSON.stringify(this.oldProperties));
+      this.applyScale(1, 1); // Properties already describe the old size
+    }
   }
 
   redo(): void {
-    this.applyScale(this.newScaleX, this.newScaleY);
+    const layer = layerManager.layers.find((l: any) => l.id === this.layerId);
+    if (layer) {
+      layer.properties = JSON.parse(JSON.stringify(this.newProperties));
+      this.applyScale(1, 1);
+    }
   }
 
   private applyScale(scaleX: number, scaleY: number): void {

@@ -3,6 +3,7 @@
 import { arrayMove } from '@dnd-kit/sortable';
 import { join, resourceDir } from '@tauri-apps/api/path';
 import { Canvas, Circle, Ellipse, FabricObject, FabricObjectProps, Rect, Triangle, IText, FabricImage, Group, Line, Text} from 'fabric';
+import { Canvas, Circle, Ellipse, FabricObject, FabricObjectProps, Rect, Triangle, IText, FabricImage, Group, Line, Text, util } from 'fabric';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { SingleFontLoad } from './singleFontLoad';
 import UndoRedoManager from './UndoRedoManager';
@@ -526,9 +527,14 @@ class LayerManager {
                     scaleY: 1,
                     originX: 'center',
                     originY: 'center',
-                    hasControls: false,
+                    hasControls: true,
                 });
-                this.addLayer(LayerType.IMAGE, img, sourcePath, new Group(), [], false, name);
+                const layerProperties: LayerProperties[] = [
+                    { property: 'W', value: img.width.toString() },
+                    { property: 'H', value: img.height.toString() },
+                    { property: 'PreserveAspectRatio', value: '1' }
+                ];
+                this.addLayer(LayerType.IMAGE, img, sourcePath, new Group(), layerProperties, false, name);
             } catch (error) {
                 console.error("Error loading image:", error);
             }
@@ -559,7 +565,7 @@ class LayerManager {
                     scaleY: 1,
                     originX: 'center',
                     originY: 'center',
-                    hasControls: false,
+                    hasControls: true,
                 });
                 this.addLayer(LayerType.IMAGE, backgroundImg, backgroundSourcePath);
           const img: FabricImage = await FabricImage.fromURL(assetUrl, { crossOrigin: 'anonymous' });
@@ -575,7 +581,7 @@ class LayerManager {
               angle: 0,
               scaleX: 1,
               scaleY: 1,
-              hasControls: false,
+              hasControls: true,
           });
           const rangeIndicator = new Circle({
             radius: 40,
@@ -597,7 +603,7 @@ class LayerManager {
             stroke: '#000',
             strokeWidth: 2,
             opacity: 0,
-            hasControls: false,
+            hasControls: true,
 
           });
           const pivotPoint = new Circle({
@@ -610,11 +616,11 @@ class LayerManager {
             opacity: 0.5,
             left: x,
             top: y,
-            hasControls: false,
+            hasControls: true,
         });
           const UIElements = new Group([pivotPoint, rangeIndicator, indLine], {
             visible: true,
-            hasControls: false,
+            hasControls: true,
             interactive: false,
             selectable: false,
             perPixelTargetFind: true,
@@ -664,7 +670,7 @@ class LayerManager {
           width: 200,
           height: 50,
           fill: '#000000',
-          hasControls: false,
+          hasControls: true,
         });
         const foreground = new Rect({
           left: x,
@@ -672,25 +678,20 @@ class LayerManager {
           width: 150,
           height: 50,
           fill: '#FFA500',
-          hasControls: false,
+          hasControls: true,
         });
         const bar = new Group([background, foreground], {
           centeredScaling: true,
           centeredRotation: true,
-          hasControls: false,
+          hasControls: true,
           perPixelTargetFind: true,
         });
-        // const layerProperties: LayerProperties[] = [
-        //   {
-        //     property: "barOrientation",
-        //     value: 'horizontal'
-        //   },
-        //   {
-        //     property: "flip",
-        //     value: '0'
-        //   }
-        // ];
-        this.addLayer(LayerType.BAR, bar, "", new Group(), [], false, name);
+        const layerProperties: LayerProperties[] = [
+          { property: "W", value: "200" },
+          { property: "H", value: "50" },
+          { property: "BarOrientation", value: "Horizontal" }
+        ];
+        this.addLayer(LayerType.BAR, bar, "", new Group(), layerProperties, false, name);
       } catch (error) {
         console.error("Error loading image:", error);
       }
@@ -751,7 +752,18 @@ class LayerManager {
             break;
         }
 
-        this.addLayer(LayerType.SHAPE, shapeObject, "", new Group(), [], false, name);
+        let shapeStr = '';
+        if (type === 'rect') shapeStr = 'Rectangle 0,0,100,100,0';
+        else if (type === 'circle') shapeStr = 'Ellipse 50,50,50,50';
+        else shapeStr = 'Rectangle 0,0,100,100'; // Default
+
+        const layerProperties: LayerProperties[] = [
+            { property: 'Shape', value: shapeStr },
+            { property: 'FillColor', value: '100,100,255,150' },
+            { property: 'StrokeWidth', value: '0' }
+        ];
+
+        this.addLayer(LayerType.SHAPE, shapeObject, "", new Group(), layerProperties, false, name);
     }
   }
 
@@ -817,6 +829,87 @@ class LayerManager {
 //     });
 //   }
 
+
+  // syncLayerFromFabricScale
+  public syncLayerFromFabricScale(layerId: string): void {
+    const layer = this.layers.find(l => l.id === layerId);
+    if (!layer || !this.canvas) return;
+
+    const obj = layer.fabricObject;
+    const scaleX = obj.scaleX || 1;
+    const scaleY = obj.scaleY || 1;
+
+    // Se a escala for 1, não precisa fazer nada
+    if (scaleX === 1 && scaleY === 1) return;
+
+    const updateProperty = (key: string, value: string) => {
+      const idx = layer.properties.findIndex(p => p.property.toLowerCase() === key.toLowerCase());
+      if (idx !== -1) layer.properties[idx].value = value;
+      else layer.properties.push({ property: key, value });
+    };
+
+    switch (layer.type) {
+      case LayerType.IMAGE:
+      case LayerType.BAR:
+      case LayerType.ROTATOR:
+      case LayerType.ROUNDLINE: {
+        const newW = (obj.width * scaleX).toFixed(0);
+        const newH = (obj.height * scaleY).toFixed(0);
+        updateProperty('W', newW);
+        updateProperty('H', newH);
+        
+        // Se for grupo, pode precisar ajustar sub-objetos (opcional, para visual)
+        if (obj instanceof Group) {
+            obj.set({ width: parseFloat(newW), height: parseFloat(newH) });
+        }
+        break;
+      }
+      case LayerType.TEXT: {
+        const textObj = obj as IText;
+        const newFontSize = (textObj.fontSize * scaleX).toFixed(0);
+        updateProperty('FontSize', newFontSize);
+        textObj.set('fontSize', parseFloat(newFontSize));
+        break;
+      }
+      case LayerType.SHAPE: {
+        const shapeStrProp = layer.properties.find(p => p.property.toLowerCase() === 'shape');
+        if (shapeStrProp) {
+          let shapeStr = shapeStrProp.value;
+          // Parse: Rectangle X,Y,W,H,R | ...
+          const parts = shapeStr.split('|');
+          let mainPart = parts[0].trim();
+          const mainWords = mainPart.split(' ');
+          const type = mainWords[0];
+          const coords = mainWords[1].split(',').map(c => c.trim());
+
+          if (type.toLowerCase() === 'rectangle') {
+            coords[2] = (parseFloat(coords[2]) * scaleX).toFixed(0); // W
+            coords[3] = (parseFloat(coords[3]) * scaleY).toFixed(0); // H
+          } else if (type.toLowerCase() === 'ellipse') {
+            coords[2] = (parseFloat(coords[2]) * scaleX).toFixed(0); // RX
+            coords[3] = (parseFloat(coords[3]) * scaleY).toFixed(0); // RY
+          } else if (type.toLowerCase() === 'line') {
+            coords[2] = (parseFloat(coords[2]) * scaleX).toFixed(0); // EndX
+            coords[3] = (parseFloat(coords[3]) * scaleY).toFixed(0); // EndY
+          }
+          
+          mainPart = `${type} ${coords.join(',')}`;
+          parts[0] = mainPart;
+          shapeStrProp.value = parts.join(' | ');
+        }
+        break;
+      }
+    }
+
+    // Reset scales to 1.0 and update fabric object dimensions
+    obj.set({
+      scaleX: 1,
+      scaleY: 1
+    });
+    obj.setCoords();
+    this.canvas.renderAll();
+    this.notifyLayerChange();
+  }
 
   // Remove a layer by ID
   removeLayer(layerId: string): void {
@@ -1001,17 +1094,7 @@ class LayerManager {
           const y = this.parseCoordinate(resolvedProps.y || '0', prevObject, true);
           let fabricObj: FabricObject | null = null;
 
-          if (type === 'string') {
-            fabricObj = new IText(resolvedProps.text || section.name, {
-              left: x,
-              top: y,
-              fontSize: parseFloat(resolvedProps.fontsize || '12') * 1.33,
-              fontFamily: resolvedProps.fontface || 'Arial',
-              fill: this.parseRainmeterColor(resolvedProps.fontcolor || '0,0,0,255'),
-              hasControls: false,
-            });
-            this.addLayer(LayerType.TEXT, fabricObj, "", new Group(), [], true, section.name);
-          } else if (type === 'image') {
+          if (type === 'image') {
             let imgSrc = resolvedProps.imagename || '';
             const rawImgName = normalizedParams.imagename || '';
             
@@ -1034,14 +1117,15 @@ class LayerManager {
                 top: y,
                 scaleX: resolvedProps.w ? parseFloat(resolvedProps.w) / img.width : 1,
                 scaleY: resolvedProps.h ? parseFloat(resolvedProps.h) / img.height : 1,
-                hasControls: false,
+                hasControls: true,
               });
-              fabricObj = img;
-              this.addLayer(LayerType.IMAGE, fabricObj, imgSrc, new Group(), [], true, section.name);
-            } catch (e) {
-              console.error("Error loading image:", e);
-            }
-          } else if (type === 'roundline') {
+            fabricObj = img;
+            const props = Object.entries(resolvedProps).map(([property, value]) => ({ property, value }));
+                this.addLayer(LayerType.IMAGE, fabricObj, imgSrc, new Group(), props, true, section.name);
+              } catch (e) {
+                console.error("Error loading image:", e);
+              }
+            } else if (type === 'roundline') {
             const w = parseFloat(resolvedProps.w || '100');
             const h = parseFloat(resolvedProps.h || '100');
             const radius = Math.min(w, h) / 2;
@@ -1070,9 +1154,10 @@ class LayerManager {
               selectable: false,
               evented: false,
             }));
-            const roundlineGroup = new Group(objects, { left: x, top: y, hasControls: false });
+            const roundlineGroup = new Group(objects, { left: x, top: y, hasControls: true });
             fabricObj = roundlineGroup;
-            this.addLayer(LayerType.ROUNDLINE, fabricObj, "", new Group(), [], true, section.name);
+            const props = Object.entries(resolvedProps).map(([property, value]) => ({ property, value }));
+            this.addLayer(LayerType.ROUNDLINE, fabricObj, "", new Group(), props, true, section.name);
           } else if (type === 'shape') {
             const w = parseFloat(resolvedProps.w || '100');
             const h = parseFloat(resolvedProps.h || '100');
@@ -1093,10 +1178,10 @@ class LayerManager {
                   fill: this.parseShapeFill(shapeDef),
                   stroke: this.parseShapeStroke(shapeDef),
                   strokeWidth: this.parseShapeStrokeWidth(shapeDef),
-                  hasControls: false,
+                  hasControls: true,
                 });
               } else {
-                shapeObj = new Rect({ left: x, top: y, width: w, height: h, fill: 'rgba(100, 100, 255, 0.2)', hasControls: false });
+                shapeObj = new Rect({ left: x, top: y, width: w, height: h, fill: 'rgba(100, 100, 255, 0.2)', hasControls: true });
               }
             } else if (shapeDef.toLowerCase().includes('ellipse')) {
               const ellipseMatch = shapeDef.match(/Ellipse\s+([\d,.]+)/i);
@@ -1111,16 +1196,17 @@ class LayerManager {
                   fill: this.parseShapeFill(shapeDef),
                   stroke: this.parseShapeStroke(shapeDef),
                   strokeWidth: this.parseShapeStrokeWidth(shapeDef),
-                  hasControls: false,
+                  hasControls: true,
                 });
               } else {
-                shapeObj = new Ellipse({ left: x, top: y, rx: w / 2, ry: h / 2, fill: 'rgba(100, 255, 100, 0.2)', hasControls: false });
+                shapeObj = new Ellipse({ left: x, top: y, rx: w / 2, ry: h / 2, fill: 'rgba(100, 255, 100, 0.2)', hasControls: true });
               }
             } else {
-              shapeObj = new Rect({ left: x, top: y, width: w, height: h, fill: 'rgba(255, 165, 0, 0.2)', hasControls: false });
+              shapeObj = new Rect({ left: x, top: y, width: w, height: h, fill: 'rgba(255, 165, 0, 0.2)', hasControls: true });
             }
             fabricObj = shapeObj;
-            this.addLayer(LayerType.SHAPE, fabricObj, "", new Group(), [], true, section.name);
+            const props = Object.entries(resolvedProps).map(([property, value]) => ({ property, value }));
+            this.addLayer(LayerType.SHAPE, fabricObj, "", new Group(), props, true, section.name);
           } else if (type === 'bar') {
             const w = parseFloat(resolvedProps.w || '100');
             const h = parseFloat(resolvedProps.h || '20');
@@ -1130,7 +1216,7 @@ class LayerManager {
               width: w,
               height: h,
               fill: this.parseRainmeterColor(resolvedProps.solidcolor || '50, 50, 50, 180'),
-              hasControls: false,
+              hasControls: true,
             });
             const foreground = new Rect({
               left: 0,
@@ -1138,16 +1224,17 @@ class LayerManager {
               width: w * 0.75, // Representation of 75% fill
               height: h,
               fill: this.parseRainmeterColor(resolvedProps.barcolor || '0, 120, 255, 255'),
-              hasControls: false,
+              hasControls: true,
             });
             const barGroup = new Group([background, foreground], {
               left: x,
               top: y,
-              hasControls: false,
+              hasControls: true,
               perPixelTargetFind: true
             });
             fabricObj = barGroup;
-            this.addLayer(LayerType.BAR, fabricObj, "", new Group(), [], true, section.name);
+            const props = Object.entries(resolvedProps).map(([property, value]) => ({ property, value }));
+            this.addLayer(LayerType.BAR, fabricObj, "", new Group(), props, true, section.name);
           } else if (type === 'rotator') {
             let imgSrc = resolvedProps.imagename || '';
             const rawImgName = normalizedParams.imagename || '';
@@ -1166,12 +1253,24 @@ class LayerManager {
             const assetUrl = imgSrc ? convertFileSrc(imgSrc) : '';
             try {
               const img: FabricImage = await FabricImage.fromURL(assetUrl, { crossOrigin: 'anonymous' });
-              img.set({ left: x, top: y, originX: 'center', originY: 'center', hasControls: false });
+              img.set({ left: x, top: y, originX: 'center', originY: 'center', hasControls: true });
               fabricObj = img;
-              this.addLayer(LayerType.ROTATOR, fabricObj, imgSrc, new Group(), [], true, section.name);
+              const props = Object.entries(resolvedProps).map(([property, value]) => ({ property, value }));
+              this.addLayer(LayerType.ROTATOR, fabricObj, imgSrc, new Group(), props, true, section.name);
             } catch (e) {
               console.error("Error loading rotator image:", e);
             }
+          } else if (type === 'string') {
+            fabricObj = new IText(resolvedProps.text || section.name, {
+              left: x,
+              top: y,
+              fontSize: parseFloat(resolvedProps.fontsize || '12') * 1.33,
+              fontFamily: resolvedProps.fontface || 'Arial',
+              fill: this.parseRainmeterColor(resolvedProps.fontcolor || '0,0,0,255'),
+              hasControls: true,
+            });
+            const props = Object.entries(resolvedProps).map(([property, value]) => ({ property, value }));
+            this.addLayer(LayerType.TEXT, fabricObj, "", new Group(), props, true, section.name);
           }
 
           if (fabricObj) {

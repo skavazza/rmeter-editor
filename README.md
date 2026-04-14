@@ -10,16 +10,18 @@ A modern, open-source GUI editor for [Rainmeter](https://www.rainmeter.net/) ski
 
 ## Features
 
-- **Visual Skin Editor:** Drag-and-drop interface for creating and arranging layers (text, images, bars, rotators, etc.)
-- **Layer Management:** Reorder, select, and delete layers with a sidebar and drag-and-drop support
-- **Property Editing:** Sidebars for editing properties of each layer type (text, image, rotator, bar, etc.)
-- **Font & Image Management:** Use local fonts and images, which are bundled with your exported skin
-- **Rainmeter Export:** Export your design as a Rainmeter-compatible `.ini` skin, with all assets and correct folder structure
-- **Native Windows Integration:**
-  - File dialogs for opening/saving
-  - Auto-update via GitHub Releases
-  - Fast, lightweight Tauri backend
-- **Community:** Discord and Reddit for support, feedback, and sharing
+- **Bidirectional Visual Editor:** Seamless real-time synchronization between the visual canvas and INI code. Switch between tabs without losing data or losing alignment.
+- **Advanced Meter Support:** Support for complex Rainmeter elements including:
+  - **Shapes:** Create and edit Rectangles and Ellipses with stroke and fill controls.
+  - **Roundlines:** Visual editing of meters that display circular progress or status.
+  - **Bars:** Enhanced bar meters with background and foreground layer management.
+  - **Rotators & Images:** Full support for image-based meters.
+- **Visual Property Editing:** Specialized sidebars for every meter type, featuring visual color pickers with automatic conversion to Rainmeter's `R,G,B,A` format.
+- **Layer Management:** Precise control over layer order (Z-index), visibility, and selection.
+- **Session Asset Caching:** Smart handling of local images ensures that absolute paths are preserved during your session for a true WYSIWYG experience.
+- **Font & Image Bundling:** Use local fonts and images; the editor automatically organizes them into the `@Resources` folder on export.
+- **Rainmeter Export:** One-click generation of fully-compatible `.ini` skins with correct folder structures.
+- **Native Windows Desktop App:** Built with Tauri for a lightweight, fast, and secure experience.
 
 
 ## Screenshots & Videos
@@ -40,8 +42,8 @@ A modern, open-source GUI editor for [Rainmeter](https://www.rainmeter.net/) ski
 
 2. **Clone the Repository:**
    ```sh
-   git clone https://github.com/kethakav/rainmeter-editor.git
-   cd rainmeter-editor
+   git clone https://github.com/skavazza/rmeter-editor.git
+   cd rmeter-editor
    ```
 
 3. **Install Dependencies:**
@@ -62,20 +64,12 @@ A modern, open-source GUI editor for [Rainmeter](https://www.rainmeter.net/) ski
 
 To get the latest version of Rainmeter Editor, visit the [official website](https://rainmetereditor.pages.dev/) and download the Windows setup file.
 
-Alternatively, you can also find releases on the [GitHub Releases](https://github.com/kethakav/rainmeter-editor/releases) page.
-
-### Installation Instructions
-
-1. Download the latest release from the [official website](https://rainmetereditor.pages.dev/) or [GitHub Releases](https://github.com/kethakav/rainmeter-editor/releases).
-2. Run the downloaded setup file.
-3. **Important:** Windows SmartScreen may display a warning indicating that the app is from an unverified developer. To proceed with the installation:
-   - Click on "More info".
-   - Click on "Run anyway".
+Alternatively, you can also find releases on the [GitHub Releases](https://github.com/skavazza/rmeter-editor/releases) page.
 
 
 ## Usage
 
-- Use the toolbar to add text, images, bars, and rotators to your canvas.
+- Use the toolbar to add text, images, bars, shapes, roundlines and rotators to your canvas.
 - Arrange and configure layers using the sidebars.
 - Export your skin via the Export button; the app will generate a Rainmeter-compatible folder with all assets and an `.ini` file.
 - Import/export project support is coming soon.
@@ -83,20 +77,13 @@ Alternatively, you can also find releases on the [GitHub Releases](https://githu
 
 ## Community & Support
 
-- [Discord](https://discord.gg/tzY82KkS4H) — Get support, share your creations, and connect with other Rainmeter enthusiasts
-- [Reddit](https://www.reddit.com/r/rainmetereditor/) — Share and discuss skins and features
-- [Report a Bug](https://github.com/kethakav/rainmeter-editor/issues/new?template=bug_report.yml)
-- [Request a Feature](https://github.com/kethakav/rainmeter-editor/issues/new?template=feature_request.yml)
+- [Report a Bug](https://github.com/skavazza/rmeter-editor/issues/new?template=bug_report.yml)
+- [Request a Feature](https://github.com/skavazza/rmeter-editor/issues/new?template=feature_request.yml)
 
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. All contributions, bug reports, and feature requests are welcome!
-
-
-## Security
-
-See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 
 ## License
