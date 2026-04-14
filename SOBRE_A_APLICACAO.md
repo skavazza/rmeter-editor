@@ -6,7 +6,7 @@
 
 **Plataforma:** Windows exclusivamente (Rainmeter é compatível apenas com Windows)
 
-**Versão Atual:** 0.2.6
+**Versão Atual:** 0.7.0
 
 ---
 
@@ -339,4 +339,4 @@ MIT License - Código aberto e livre para uso e modificação
 ---
 
 **Última atualização:** Março 2026
-**Versão documentada:** 0.2.6
+**Versão documentada:** 0.7.0
