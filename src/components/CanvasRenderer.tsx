@@ -149,106 +149,76 @@ const CanvasRenderer: React.FC = () => {
       };
 
       const handleMouseDown = (event: any) => {
-        const pointer = canvas.getPointer(event.e);
-        
         if (layerManager.activeTool === 'select') {
           const target = canvas.findTarget(event.e);
           if (target) {
             const layer = layerManager.getLayers().find(layer => layer.fabricObject === target);
             if (layer) {
-              // setSelectedLayerId(layer.id);
               setSelectedLayer(layer);
             }
           } else {
             canvas.discardActiveObject();
-            // setSelectedLayerId(null);
             setSelectedLayer(null);
           }
-        } else {
+        }
+      };
+
+      const handleMouseUp = (event: any) => {
+        if (layerManager.activeTool !== 'select') {
+          const pointer = canvas.getScenePoint(event.e);
           layerManager.addLayerWithMouse(pointer.x, pointer.y);
         }
       };
 
       const handleObjectMoving = (event: any) => {
-        var x = event.e.movementX;
-        var y = event.e.movementY;
         const movingObject = event.target;
-        console.log('Object moving:', movingObject);
-        
-        // Apply snap to grid if enabled
+        if (!movingObject) return;
+
         const gridConfig = canvasManager.getGridConfig();
         const movingObjects = movingObject.getObjects ? movingObject.getObjects() : (movingObject as any)._objects;
-        
-        if (gridConfig.snapToGrid && movingObjects) {
+
+        if (movingObjects) {
+          // Multiple objects moving (selection group)
           movingObjects.forEach((obj: FabricObject) => {
             const layer = layerManager.getLayerByFabricObject(obj);
             if (layer?.UIElements) {
-              const snappedLeft = canvasManager.snapToGrid(obj.left || 0);
-              const snappedTop = canvasManager.snapToGrid(obj.top || 0);
+              if (gridConfig.snapToGrid) {
+                const snappedLeft = canvasManager.snapToGrid(obj.left || 0);
+                const snappedTop = canvasManager.snapToGrid(obj.top || 0);
+                obj.set({ left: snappedLeft, top: snappedTop });
+              }
               
+              // Always sync UIElements to the object's current position
               layer.UIElements.set({
-                left: layer.UIElements.left + (snappedLeft - obj.left),
-                top: layer.UIElements.top + (snappedTop - obj.top)
+                left: obj.left,
+                top: obj.top
               });
-              
-              obj.set({ left: snappedLeft, top: snappedTop });
               layer.UIElements.setCoords();
-              canvas.renderAll();
             }
           });
-        }
-        else if (gridConfig.snapToGrid) {
+        } else {
+          // Single object moving
           const layer = layerManager.getLayerByFabricObject(movingObject);
-
           if (layer?.UIElements) {
-            const snappedLeft = canvasManager.snapToGrid(movingObject.left || 0);
-            const snappedTop = canvasManager.snapToGrid(movingObject.top || 0);
-            
-            layer.UIElements.set({
-              left: layer.UIElements.left + (snappedLeft - movingObject.left),
-              top: layer.UIElements.top + (snappedTop - movingObject.top)
-            });
-            
-            movingObject.set({ left: snappedLeft, top: snappedTop });
-            layer.UIElements.setCoords();
-            canvas.renderAll();
-          }
-        }
-        else {
-          // No snap, just normal move
-          const movingObjects = movingObject.getObjects ? movingObject.getObjects() : (movingObject as any)._objects;
-          if (movingObjects) {
-            console.log('Multiple objects moving');
-            movingObjects.forEach((obj: FabricObject) => {
-              const layer = layerManager.getLayerByFabricObject(obj);
-              if (layer?.UIElements) {
-                layer.UIElements.set({
-                  left: layer.UIElements.left + x,
-                  top: layer.UIElements.top + y
-                });
-                layer.UIElements.setCoords();
-                canvas.renderAll();
-              }
-            });
-          }
-          else {
-            const layer = layerManager.getLayerByFabricObject(movingObject);
-
-            if (layer?.UIElements) {
-              // Update UIElements position to match the fabric object
-              layer.UIElements.set({
-                left: layer.UIElements.left + x,
-                top: layer.UIElements.top + y
-              });
-              layer.UIElements.setCoords();
-              canvas.renderAll();
+            if (gridConfig.snapToGrid) {
+              const snappedLeft = canvasManager.snapToGrid(movingObject.left || 0);
+              const snappedTop = canvasManager.snapToGrid(movingObject.top || 0);
+              movingObject.set({ left: snappedLeft, top: snappedTop });
             }
+            
+            // Sync UIElements position
+            layer.UIElements.set({
+              left: movingObject.left,
+              top: movingObject.top
+            });
+            layer.UIElements.setCoords();
           }
         }
+        canvas.renderAll();
       };
 
       const handleObjectMovingStart = (event: any) => {
-        const movingObject = event.target;
+        const movingObject = event.target || (event.transform && event.transform.target);
         const layer = layerManager.getLayerByFabricObject(movingObject);
         if (layer) {
           moveStartPositionsRef.current.set(layer.id, {
@@ -259,7 +229,7 @@ const CanvasRenderer: React.FC = () => {
       };
 
       const handleObjectMovingEnd = (event: any) => {
-        const movingObject = event.target;
+        const movingObject = event.target || (event.transform && event.transform.target);
         const layer = layerManager.getLayerByFabricObject(movingObject);
         if (layer) {
           const startPos = moveStartPositionsRef.current.get(layer.id);
@@ -269,7 +239,6 @@ const CanvasRenderer: React.FC = () => {
               top: movingObject.top || 0,
             };
             
-            // Only create command if position actually changed
             if (startPos.left !== endPos.left || startPos.top !== endPos.top) {
               const command = new MoveLayerCommand(
                 layer.id,
@@ -286,7 +255,7 @@ const CanvasRenderer: React.FC = () => {
       };
 
       const handleObjectScalingStart = (event: any) => {
-        const target = event.target;
+        const target = event.target || (event.transform && event.transform.target);
         const layer = layerManager.getLayerByFabricObject(target);
         if (layer) {
           resizeStartScalesRef.current.set(layer.id, {
@@ -297,7 +266,7 @@ const CanvasRenderer: React.FC = () => {
       };
 
       const handleObjectScalingEnd = (event: any) => {
-        const target = event.target;
+        const target = event.target || (event.transform && event.transform.target);
         const layer = layerManager.getLayerByFabricObject(target);
         if (layer) {
           const startScale = resizeStartScalesRef.current.get(layer.id);
@@ -307,7 +276,6 @@ const CanvasRenderer: React.FC = () => {
               scaleY: target.scaleY || 1,
             };
             
-            // Only create command if scale actually changed
             if (startScale.scaleX !== endScale.scaleX || startScale.scaleY !== endScale.scaleY) {
               const command = new ResizeLayerCommand(
                 layer.id,
@@ -324,7 +292,7 @@ const CanvasRenderer: React.FC = () => {
       };
 
       const handleObjectRotatingStart = (event: any) => {
-        const target = event.target;
+        const target = event.target || (event.transform && event.transform.target);
         const layer = layerManager.getLayerByFabricObject(target);
         if (layer) {
           rotationStartAngleRef.current.set(layer.id, target.angle || 0);
@@ -332,14 +300,13 @@ const CanvasRenderer: React.FC = () => {
       };
 
       const handleObjectRotatingEnd = (event: any) => {
-        const target = event.target;
+        const target = event.target || (event.transform && event.transform.target);
         const layer = layerManager.getLayerByFabricObject(target);
         if (layer) {
           const startAngle = rotationStartAngleRef.current.get(layer.id);
           if (startAngle !== undefined) {
             const endAngle = target.angle || 0;
             
-            // Only create command if angle actually changed
             if (startAngle !== endAngle) {
               const command = new RotateLayerCommand(layer.id, startAngle, endAngle);
               UndoRedoManager.getInstance().execute(command);
@@ -401,13 +368,15 @@ const CanvasRenderer: React.FC = () => {
       canvas.on('selection:created', handleSelectionEvent);
       canvas.on('selection:updated', handleSelectionEvent);
       canvas.on('mouse:down', handleMouseDown);
+      canvas.on('mouse:up', handleMouseUp);
+      canvas.on('before:transform', handleObjectMovingStart);
+      canvas.on('before:transform', handleObjectScalingStart);
+      canvas.on('before:transform', handleObjectRotatingStart);
+      
       canvas.on('object:moving', handleObjectMoving);
-      canvas.on('object:moving', handleObjectMovingStart);
-      canvas.on('object:moving', handleObjectMovingEnd);
-      canvas.on('object:scaling', handleObjectScalingStart);
-      canvas.on('object:scaling', handleObjectScalingEnd);
-      canvas.on('object:rotating', handleObjectRotatingStart);
-      canvas.on('object:rotating', handleObjectRotatingEnd);
+      canvas.on('object:modified', handleObjectMovingEnd);
+      canvas.on('object:modified', handleObjectScalingEnd);
+      canvas.on('object:modified', handleObjectRotatingEnd);
       canvas.on('mouse:wheel', handleMouseWheel);
 
       // Keyboard shortcuts for Undo/Redo
@@ -427,13 +396,14 @@ const CanvasRenderer: React.FC = () => {
         canvas.off('selection:created', handleSelectionEvent);
         canvas.off('selection:updated', handleSelectionEvent);
         canvas.off('mouse:down', handleMouseDown);
+        canvas.off('mouse:up', handleMouseUp);
         canvas.off('object:moving', handleObjectMoving);
-        canvas.off('object:moving', handleObjectMovingStart);
-        canvas.off('object:moving', handleObjectMovingEnd);
-        canvas.off('object:scaling', handleObjectScalingStart);
-        canvas.off('object:scaling', handleObjectScalingEnd);
-        canvas.off('object:rotating', handleObjectRotatingStart);
-        canvas.off('object:rotating', handleObjectRotatingEnd);
+        canvas.off('before:transform', handleObjectMovingStart);
+        canvas.off('object:modified', handleObjectMovingEnd);
+        canvas.off('before:transform', handleObjectScalingStart);
+        canvas.off('object:modified', handleObjectScalingEnd);
+        canvas.off('before:transform', handleObjectRotatingStart);
+        canvas.off('object:modified', handleObjectRotatingEnd);
         canvas.off('mouse:wheel', handleMouseWheel);
         canvas.dispose();
         window.removeEventListener('resize', handleResize);

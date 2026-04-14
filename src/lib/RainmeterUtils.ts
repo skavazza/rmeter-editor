@@ -71,9 +71,9 @@ export class RainmeterUtils {
         return val;
       }
 
-      // Replace #@# with resources directory
+      // Replace #@# with @Resources directory
       if (resourcesDir) {
-        val = val.replace(/#@#/g, resourcesDir + '/');
+        val = val.replace(/#@#/g, resourcesDir + '/@Resources/');
       }
 
       // Replace #Var# with variable value (case-insensitive)

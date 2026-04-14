@@ -8,6 +8,7 @@ import { PenTool, Palette, Minus } from 'lucide-react';
 import CommonProperties from './CommonProperties';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import CollapsibleSidebarGroup from './CollapsibleSidebarGroup';
+import { fromRainmeterColor, toRainmeterColor, rainmeterToHex } from '@/lib/colorUtils';
 
 type ShapeType = 'Rectangle' | 'Ellipse' | 'Line';
 
@@ -98,6 +99,13 @@ const ShapeLayerProperties: React.FC = () => {
                 else layer.properties.push(upd);
             });
 
+            // Update Fabric object visually
+            layer.fabricObject.set({
+                fill: fromRainmeterColor(fill),
+                stroke: fromRainmeterColor(stroke),
+                strokeWidth: parseFloat(sw) || 0
+            });
+
             layerManager.getCanvas()?.renderAll();
         }
     };
@@ -126,11 +134,7 @@ const ShapeLayerProperties: React.FC = () => {
     };
 
     const rgbaToHex = (rgba: string) => {
-        const parts = rgba.split(',').map(Number);
-        const r = parts[0] || 0;
-        const g = parts[1] || 0;
-        const b = parts[2] || 0;
-        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        return rainmeterToHex(rgba);
     };
 
     const handleColorChange = (type: 'fill' | 'stroke', hex: string) => {

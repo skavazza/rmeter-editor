@@ -10,6 +10,7 @@ import { AddLayerCommand } from './commands';
 
 import { IniParser } from '../lib/IniParser';
 import { RainmeterUtils } from '../lib/RainmeterUtils';
+import { fromRainmeterColor } from '../lib/colorUtils';
 
 // Enum for layer types
 export enum LayerType {
@@ -46,6 +47,7 @@ class LayerManager {
     private static instance: LayerManager | null = null;
     public canvas: Canvas | null = null;
     private skinBackground: FabricObject | null = null;
+    private sessionImages: string[] = [];
 
     public activeTool: string = 'select';
   
@@ -1010,7 +1012,20 @@ class LayerManager {
             });
             this.addLayer(LayerType.TEXT, fabricObj, "", new Group(), [], true, section.name);
           } else if (type === 'image') {
-            const imgSrc = resolvedProps.imagename || '';
+            let imgSrc = resolvedProps.imagename || '';
+            const rawImgName = normalizedParams.imagename || '';
+            
+            // Check session cache if it's a managed path (#@#Images/N.png)
+            if (rawImgName.startsWith('#@#Images/')) {
+              const match = rawImgName.match(/#@#Images\/(\d+)\.png/);
+              if (match) {
+                const index = parseInt(match[1]);
+                if (this.sessionImages[index]) {
+                  imgSrc = this.sessionImages[index];
+                }
+              }
+            }
+
             const assetUrl = imgSrc ? convertFileSrc(imgSrc) : '';
             try {
               const img: FabricImage = await FabricImage.fromURL(assetUrl, { crossOrigin: 'anonymous' });
@@ -1108,21 +1123,46 @@ class LayerManager {
             this.addLayer(LayerType.SHAPE, fabricObj, "", new Group(), [], true, section.name);
           } else if (type === 'bar') {
             const w = parseFloat(resolvedProps.w || '100');
-            const h = parseFloat(resolvedProps.h || '100');
-            const barObj = new Rect({
-              left: x,
-              top: y,
+            const h = parseFloat(resolvedProps.h || '20');
+            const background = new Rect({
+              left: 0,
+              top: 0,
               width: w,
               height: h,
-              fill: this.parseRainmeterColor(resolvedProps.barcolor || '0, 120, 255, 255'),
-              stroke: this.parseRainmeterColor(resolvedProps.barbordercolor || '100, 100, 100, 255'),
-              strokeWidth: parseFloat(resolvedProps.barborderwidth || '0'),
+              fill: this.parseRainmeterColor(resolvedProps.solidcolor || '50, 50, 50, 180'),
               hasControls: false,
             });
-            fabricObj = barObj;
+            const foreground = new Rect({
+              left: 0,
+              top: 0,
+              width: w * 0.75, // Representation of 75% fill
+              height: h,
+              fill: this.parseRainmeterColor(resolvedProps.barcolor || '0, 120, 255, 255'),
+              hasControls: false,
+            });
+            const barGroup = new Group([background, foreground], {
+              left: x,
+              top: y,
+              hasControls: false,
+              perPixelTargetFind: true
+            });
+            fabricObj = barGroup;
             this.addLayer(LayerType.BAR, fabricObj, "", new Group(), [], true, section.name);
           } else if (type === 'rotator') {
-            const imgSrc = resolvedProps.imagename || '';
+            let imgSrc = resolvedProps.imagename || '';
+            const rawImgName = normalizedParams.imagename || '';
+            
+            // Check session cache if it's a managed path (#@#Images/N.png)
+            if (rawImgName.startsWith('#@#Images/')) {
+              const match = rawImgName.match(/#@#Images\/(\d+)\.png/);
+              if (match) {
+                const index = parseInt(match[1]);
+                if (this.sessionImages[index]) {
+                  imgSrc = this.sessionImages[index];
+                }
+              }
+            }
+
             const assetUrl = imgSrc ? convertFileSrc(imgSrc) : '';
             try {
               const img: FabricImage = await FabricImage.fromURL(assetUrl, { crossOrigin: 'anonymous' });
@@ -1172,19 +1212,12 @@ class LayerManager {
       }
     }
 
-    return val;
+    const offset = isY ? (this.skinBackground?.top || 200) : (this.skinBackground?.left || 400);
+    return val + offset;
   }
 
   private parseRainmeterColor(colorStr: string): string {
-    const parts = colorStr.split(',').map(p => p.trim());
-    if (parts.length >= 3) {
-      const r = parts[0];
-      const g = parts[1];
-      const b = parts[2];
-      const a = parts[3] ? (parseInt(parts[3]) / 255).toFixed(2) : '1';
-      return `rgba(${r},${g},${b},${a})`;
-    }
-    return colorStr;
+    return fromRainmeterColor(colorStr);
   }
 
   // Helper functions for parsing Shape meter properties
@@ -1219,6 +1252,10 @@ class LayerManager {
   // Get all layers
   getLayers(): LayerConfig[] {
     return [...this.layers];
+  }
+
+  public setSessionImages(images: string[]): void {
+    this.sessionImages = images;
   }
 }
 

@@ -1,11 +1,12 @@
 // ExportToINI.ts
 import { copyFile } from '@tauri-apps/plugin-fs';
 import { layerManager } from './LayerManager';
-import { Group, IText, Rect, TFiller } from 'fabric';
+import { Circle, Ellipse, Group, IText, Line, Rect, TFiller } from 'fabric';
 import { open} from '@tauri-apps/plugin-dialog';
 import { mkdir, writeFile, exists } from '@tauri-apps/plugin-fs'; 
 import { resourceDir } from '@tauri-apps/api/path';
 import { localFontManager } from './LocalFontManager';
+import { toRainmeterColor } from '@/lib/colorUtils';
 
 // Types for Rainmeter Skin Components
 export interface RainmeterMetadata {
@@ -233,8 +234,8 @@ export const generateIniContent = async (
   exporter.properties.allowScrollResize = allowScrollResize;
   
   const systemFonts = localFontManager.getCachedFonts();
-  const minX = skinBackground?.left || 0;
-  const minY = skinBackground?.top || 0;
+  const minX = skinBackground?.left ?? 400;
+  const minY = skinBackground?.top ?? 200;
 
   if (allowScrollResize) {
     exporter.addVariable('Scale', '1.0');
@@ -443,11 +444,75 @@ export const generateIniContent = async (
       if (layer.measure === "bar-disk") { options = { Drive: 'C:', InvertMeasure: '1', UpdateDivider: '5' }; }
       exporter.addLayer({ measure: { type: layer.measure === "bar-cpu" ? 'CPU' : 'FreeDiskSpace', name: 'Measure' + layer.name, options } });
       addBarMeterLayerOneMeasure(exporter, layer, adjustedX, adjustedY, layer.fabricObject.width, layer.fabricObject.height);
+    } else if (layer.type === 'shape') {
+      const obj = layer.fabricObject;
+      let shapeStr = '';
+      
+      if (obj instanceof Rect) {
+        shapeStr = `Rectangle 0,0,${(obj.width * obj.scaleX).toFixed(0)},${(obj.height * obj.scaleY).toFixed(0)},${obj.rx || 0}`;
+      } else if (obj instanceof Ellipse) {
+        shapeStr = `Ellipse ${(obj.rx * obj.scaleX).toFixed(0)},${(obj.ry * obj.scaleY).toFixed(0)},${(obj.rx * obj.scaleX).toFixed(0)},${(obj.ry * obj.scaleY).toFixed(0)}`;
+      } else if (obj instanceof Circle) {
+        const r = (obj as any).radius * obj.scaleX;
+        shapeStr = `Ellipse ${r.toFixed(0)},${r.toFixed(0)},${r.toFixed(0)},${r.toFixed(0)}`;
+      } else {
+        // Fallback for other shapes (like Triangle)
+        shapeStr = `Rectangle 0,0,${(obj.width * obj.scaleX).toFixed(0)},${(obj.height * obj.scaleY).toFixed(0)}`;
+      }
+
+      const fill = toRainmeterColor(obj.fill, obj.opacity);
+      const stroke = toRainmeterColor(obj.stroke, obj.opacity);
+      const strokeWidth = obj.strokeWidth || 0;
+
+      exporter.addLayer({
+        meter: {
+          type: 'Shape',
+          name: layer.name,
+          options: {
+            X: formatCoord(adjustedX),
+            Y: formatCoord(adjustedY),
+            Shape: `${shapeStr} | Fill Color ${fill} | Stroke Color ${stroke} | StrokeWidth ${strokeWidth}`
+          }
+        }
+      });
+    } else if (layer.type === 'roundline') {
+      const group = layer.fabricObject as Group;
+      const objects = group.getObjects ? group.getObjects() : (group as any)._objects;
+      
+      // Basic defaults for roundline
+      const lineColor = objects[1] ? toRainmeterColor((objects[1] as any).stroke, (objects[1] as any).opacity) : '255,255,255,255';
+      const solidColor = objects[0] ? toRainmeterColor((objects[0] as any).stroke, (objects[0] as any).opacity) : '50,50,50,180';
+      const lineWidth = objects[1] ? (objects[1] as any).strokeWidth : '4';
+
+      exporter.addLayer({ measure: { type: 'Time', name: 'Measure' + layer.name, options: { Format: '%S' } } });
+      exporter.addLayer({
+        meter: {
+          type: 'Roundline',
+          name: layer.name,
+          measureName: 'Measure' + layer.name,
+          options: {
+            X: formatCoord(adjustedX),
+            Y: formatCoord(adjustedY),
+            W: formatCoord(group.width * group.scaleX),
+            H: formatCoord(group.height * group.scaleY),
+            LineColor: lineColor,
+            SolidColor: solidColor,
+            LineStart: (group.width * 0.15).toFixed(0),
+            LineLength: (group.width * 0.4).toFixed(0),
+            LineWidth: lineWidth,
+            AntiAlias: '1',
+            Solid: '1',
+          }
+        }
+      });
     }
   });
+  
+  layerManager.setSessionImages(tracking.images);
 
   return exporter.export();
 };
+
 
 export const exportSkin = async (resourcePath: string, metadata: RainmeterMetadata, allowScrollResize: boolean): Promise<string> => {
   const tracking = { fonts: new Set<string>(), images: [] as string[] };
@@ -504,15 +569,6 @@ export const handleCreateDirectory = async (metadata: RainmeterMetadata,  allowS
   }
 };
 
-function hexToRgb(hex: string | TFiller, opacity: number): string {
-  if (typeof hex === 'string') {
-    hex = hex.replace(/^#/, '');
-    const bigint = parseInt(hex, 16);
-    const r = (bigint >> 16) & 255;
-    const g = (bigint >> 8) & 255;
-    const b = bigint & 255;
-    const alpha = Math.round(opacity * 255);
-    return `${r},${g},${b},${alpha}`;
-  }
-  return `0,0,0,${Math.round(opacity * 255)}`;
+function hexToRgb(hex: string | any, opacity: number): string {
+  return toRainmeterColor(hex, opacity);
 }
